@@ -53,6 +53,7 @@ function focusCurrentPage() {
 }
 
 const routeReloadState = "openbotRouteReload";
+const failedRoutePreloads = new Set<string>();
 
 function routeReloadFocus(): boolean | undefined {
   const focus: unknown = window.history.state?.[routeReloadState];
@@ -61,6 +62,18 @@ function routeReloadFocus(): boolean | undefined {
 
 export function restoreRouteReloadFocus(router: AnyRouter) {
   if (typeof window === "undefined") return;
+  window.addEventListener(
+    "error",
+    ({ target }) => {
+      if (
+        target instanceof HTMLLinkElement &&
+        target.relList.contains("modulepreload") &&
+        new URL(target.href).origin === window.location.origin
+      )
+        failedRoutePreloads.add(target.href);
+    },
+    true,
+  );
   router.subscribe("onRendered", () => {
     const requested = routeReloadFocus();
     if (requested === undefined) return;
@@ -329,8 +342,22 @@ export function RouteLoadError({ error, reset }: ErrorComponentProps) {
         const attempt = { entry, pending: true };
         recoveryAttempts.set(router, attempt);
         if (isRouteModuleLoadError(error)) {
-          // A failed module fetch is cached for this document. Reload the same
-          // history entry so the browser can request the route again.
+          // WebKit can retain a failed module preload across document reloads.
+          // Refresh only the preloads that failed before replacing this document.
+          if (failedRoutePreloads.size) {
+            const signal = AbortSignal.timeout(3000);
+            await Promise.allSettled(
+              [...failedRoutePreloads].map(async (url) => {
+                const response = await fetch(url, { cache: "reload", signal });
+                if (response.ok) await response.arrayBuffer();
+              }),
+            );
+            const current = router.history.location;
+            if ((current.state.__TSR_key ?? current.href) !== entry) {
+              attempt.pending = false;
+              return false;
+            }
+          }
           window.history.replaceState(
             { ...window.history.state, [routeReloadState]: restoreFocus },
             "",
