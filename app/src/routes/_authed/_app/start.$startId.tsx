@@ -404,7 +404,7 @@ function StartHandoff({ owner, startId }: { owner: string; startId: string }) {
           collapsible={false}
           status="warning"
           title="This conversation start is unavailable."
-          description="To resume this message, open the link in the browser where you sent it."
+          description="To recover a saved draft, open this link in the browser and account where you started it. If the draft is gone, start a new conversation."
         >
           <Link
             className={buttonVariants({
