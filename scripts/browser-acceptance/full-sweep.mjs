@@ -13,10 +13,10 @@ for (const origin of [FIXTURE_APP_URL, FIXTURE_API_URL]) {
 
 const readJson = async (path) => JSON.parse(await readFile(path, "utf8"));
 const mode = process.env.SWEEP_MODE ?? "full";
-assert(["full", "bookmarks", "shells", "playground"].includes(mode));
+assert(["full", "bookmarks", "shells", "playground", "brokers"].includes(mode));
 const views = (await readJson("docs/acceptance/web127-views.json")).flatMap(
   (view, i) => {
-    if (mode === "bookmarks") return [];
+    if (mode === "bookmarks" || (mode === "brokers" && !view.broker)) return [];
     if (mode === "playground" && view.route !== "/admin/playground") return [];
     if (
       mode === "shells" &&
@@ -34,7 +34,7 @@ const views = (await readJson("docs/acceptance/web127-views.json")).flatMap(
   },
 );
 const bookmarks =
-  mode === "shells" || mode === "playground"
+  mode === "shells" || mode === "playground" || mode === "brokers"
     ? []
     : await readJson("docs/acceptance/web127-bookmarks.json");
 const build = await readJson(BUILD_MANIFEST);
@@ -222,6 +222,21 @@ async function capture(browser, cases, role, width, theme) {
             });
           });
         }
+        if (entry.broker) {
+          await page.route("**/api/plugins", async (route) => {
+            const response = await route.fetch();
+            const body = await response.json();
+            await route.fulfill({
+              response,
+              json: {
+                ...body,
+                provider: entry.broker,
+                composioConfigured: true,
+                authorizesPerAction: entry.broker === "arcade",
+              },
+            });
+          });
+        }
         const routeLoadFailure = entry.view === "Route load failure";
         let routeBlocked = routeLoadFailure;
         if (routeLoadFailure) {
@@ -252,6 +267,9 @@ async function capture(browser, cases, role, width, theme) {
             .getByText(entry.description, { exact: true })
             .first()
             .waitFor({ timeout: 5000 });
+        }
+        if (entry.broker) {
+          assert.equal(new URL(page.url()).pathname, entry.path);
         }
         if (entry.expected) {
           await page.waitForURL(
@@ -417,7 +435,7 @@ assert.deepEqual(
     .flatMap((record) => record.errors),
   [],
 );
-if (mode === "full") {
+if (mode === "full" || mode === "brokers") {
   const renderFailures = records.flatMap(({ id, console }) =>
     console.flatMap(([level, message]) => {
       if (level !== "error" || !/^\w*Error:/.test(message)) return [];
