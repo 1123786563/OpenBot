@@ -1853,3 +1853,26 @@ Tasks 和 Ideas 的独立评分见上文。Tasks 内嵌的 Goals 与 Routines �
 设计证据包含主线 Skills 和 Memory 的流程、早期 Skills 清单截图，以及 #304、#305 候选构建的 Playground 草稿和 Memory 回执。隔离 PostgreSQL 覆盖 Bot 授权与持久化，模型使用测试替身。完整读屏、真实服务流程与其他角色的复评仍待验。 [工单证据](https://github.com/1123786563/OpenBot/issues/188)
 
 独立检测对主线 `f5b0603a7` 执行 108 个 Team 管理员 Chromium 检查。20 个源码文件未报问题。浏览器检测报告 21 次嵌套容器警告和 10 次窄屏孤词提示，未报告页面异常、文档横向溢出、小字或低对比度。 [检测记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/web188-detector.Hdkmq1)
+
+### #190 Connections 与插件独立复评
+
+两位独立评审分别完成设计评分和自动检测。分数描述整改前的隔离证据，均为暂定。
+
+| 视图 | H1–H10 | 暂定分 | 证据与身份 |
+|---|---|---:|---|
+| `/connections` | 3 3 3 3 3 3 3 3 3 3 | 30/40 | `812fb65ed`，Team 管理员和 Personal。模拟回调显示下一步，刷新后不重复。 |
+| `/connections/$key`，Team | 3 3 3 3 3 3 2 3 3 3 | 29/40 | Team 使用者的共享账号基线。长授权流程另在管理页验证。 |
+| `/connections/$key`，Personal | 3 3 3 3 3 3 2 3 3 3 | 29/40 | Personal 隔离长列表和 #307 候选。25 个动作可浏览，定位依赖滚动。 |
+| `/connections/github` | 3 2 3 3 4 3 3 3 3 3 | 30/40 | `812fb65ed`，两种部署。重复绑定说明下一步，工具账号与仓库事件账号的术语仍难区分。 |
+| `/admin/plugins` | 3 3 3 3 3 3 3 3 3 3 | 30/40 | Team 管理员。`812fb65ed` 键盘回焦及 #308 鼠标候选。 |
+| `/admin/plugins/$key` | 3 3 3 3 2 3 3 3 3 3 | 29/40 | Team 长详情。320 像素下关闭应用的后果被截断，#309 补齐。 |
+| `/admin/plugins/$key/bots/$agentId` | 3 3 3 3 3 3 3 3 3 3 | 30/40 | Team 管理员长授权页。筛选、失败提示和开关原状态有流程证据。 |
+| `/admin/plugins/$key/tools/$tool` | 3 3 3 3 3 3 2 3 3 3 | 29/40 | Team 管理员。后退恢复 Bot 筛选，真实授权变更待验。 |
+| `/connections/browse/arcade` | 3 3 3 3 3 3 2 3 4 3 | 30/40 | Personal，目录和 Orca 读取重试。 |
+| `/connections/browse/composio` | 3 3 3 3 3 3 2 3 4 3 | 30/40 | Personal，目录和 Orca 读取重试。 |
+| `/admin/plugins/arcade` | 3 3 3 3 3 3 2 3 4 3 | 30/40 | Team 管理员，目录和 Orca 读取重试。 |
+| `/admin/plugins/composio` | 3 3 3 3 3 3 2 3 4 3 | 30/40 | Team 管理员，目录和 Orca 读取重试。 |
+
+四个目录使用 `5fd1f25a` 的桌面、窄屏浅深主题证据；Orca 读取重试来自 `bbbbe63f`。长详情检测构建的 index SHA 以 `cf59b4db` 开头。Slack 和 Routines 连接目前只有基线画面，其余正式评分待验。真实供应商同意、回调和授权变更仍待验证。 [#190](https://github.com/1123786563/OpenBot/issues/190)
+
+独立自动检测执行 70 个 Chromium 场景。源码扫描覆盖 16 个文件，均未报问题。浏览器检测记录 280 项警告，其中 Personal 25 项动作描述在各宽度和主题重复出现小字提示。另有长行与嵌套容器警告。四个目录的 16 个场景无检测发现。全部场景无页面异常和文档横向溢出。 [检测记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/web190-detector.ESLrxr)

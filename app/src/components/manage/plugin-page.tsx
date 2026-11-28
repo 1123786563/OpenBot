@@ -172,7 +172,7 @@ function ToolInWords({
     <>
       <ItemTitle className="block w-auto wrap-anywhere">{label}</ItemTitle>
       {summary ? (
-        <ItemDescription className="line-clamp-none wrap-anywhere">
+        <ItemDescription className="line-clamp-none wrap-anywhere text-sm">
           {summary}
         </ItemDescription>
       ) : null}
@@ -832,7 +832,7 @@ export function PluginPage({
                 <ItemTitle>
                   {personal ? "Turned on" : "Enable for this deployment"}
                 </ItemTitle>
-                <ItemDescription>
+                <ItemDescription className="line-clamp-none">
                   {personal
                     ? "Your Bots can use its tools. Turning this off removes it and every Bot's access to its tools."
                     : server
@@ -1512,7 +1512,7 @@ export function PluginPage({
                           <ItemTitle className="block w-auto wrap-anywhere font-mono text-sm">
                             {tool.name}
                           </ItemTitle>
-                          <ItemDescription className="line-clamp-none wrap-anywhere">
+                          <ItemDescription className="line-clamp-none wrap-anywhere text-sm">
                             {tool.description}
                           </ItemDescription>
                         </>
