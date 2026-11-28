@@ -1,4 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
+import { t } from "@/i18n";
 import { ClientError, client } from "@/lib/client";
 
 /*
@@ -101,13 +102,16 @@ export function liveStatus(status: TaskStatus, busy: boolean): TaskStatus {
 }
 
 /** Each status in a word or two, as a row says it. */
-export const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
-  ready_for_review: "Ready for review",
-  needs_input: "Needs input",
-  failed: "Failed",
-  working: "Working",
-  resolved: "Resolved",
-};
+export function taskStatusLabel(status: TaskStatus): string {
+  const labels: Record<TaskStatus, string> = {
+    ready_for_review: t("tasks.status.ready", "Ready for review"),
+    needs_input: t("tasks.status.needsInput", "Needs input"),
+    failed: t("tasks.status.failed", "Failed"),
+    working: t("tasks.status.working", "Working"),
+    resolved: t("tasks.status.resolved", "Resolved"),
+  };
+  return labels[status];
+}
 
 /** What a failed task says after its status: "Couldn't finish: <reason>." */
 export function couldNotFinish(failure: string | null): string {

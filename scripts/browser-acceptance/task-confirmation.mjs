@@ -150,6 +150,21 @@ for (const [engine, theme] of [
     let writes = 0;
     let approvalsReady = false;
     const chinese = engine === webkit;
+    const labels = chinese
+      ? {
+          mark: "标记为完成",
+          cancel: "取消",
+          retry: "重试",
+          reopen: "重新打开",
+          resolved: "已解决",
+        }
+      : {
+          mark: "Mark done",
+          cancel: "Cancel",
+          retry: "Try again",
+          reopen: "Reopen",
+          resolved: "Resolved",
+        };
     await page.route("**/api/approvals", (route) =>
       approvalsReady
         ? route.continue()
@@ -177,21 +192,23 @@ for (const [engine, theme] of [
     approvalsReady = true;
     await retryApprovals.press("Enter");
     await retryApprovals.waitFor({ state: "hidden" });
-    const mark = page.getByRole("button", { name: "Mark done", exact: true });
+    const mark = page.getByRole("button", { name: labels.mark, exact: true });
     await mark.press("Enter", { timeout: 15000 });
     const dialog = page.getByRole("alertdialog", {
       name: chinese
         ? "将「Review notes」标记为完成？"
         : "Mark Review notes done?",
     });
-    const cancel = dialog.getByRole("button", { name: "Cancel" });
+    const cancel = dialog.getByRole("button", { name: labels.cancel });
     await page.waitForFunction(
-      () => document.activeElement?.textContent?.trim() === "Cancel",
+      (label) => document.activeElement?.textContent?.trim() === label,
+      labels.cancel,
     );
     await cancel.press("Escape");
     await dialog.waitFor({ state: "hidden" });
     await page.waitForFunction(
-      () => document.activeElement?.textContent?.trim() === "Mark done",
+      (label) => document.activeElement?.textContent?.trim() === label,
+      labels.mark,
     );
     assert.equal(writes, 0);
     await page.keyboard.press("Enter");
@@ -208,13 +225,13 @@ for (const [engine, theme] of [
     await dialog
       .getByRole("button", { name: chinese ? "标记为完成" : "Mark done" })
       .press("Enter");
-    const retry = dialog.getByRole("button", { name: "Try again" });
+    const retry = dialog.getByRole("button", { name: labels.retry });
     await retry.waitFor();
     const retryFrames = [];
     for (let frame = 0; frame < 8; frame++) {
       const samples = await page.evaluate(sampleContrast);
       retryFrames.push(
-        samples.find((sample) => sample.label === "Try again")?.ratio,
+        samples.find((sample) => sample.label === labels.retry)?.ratio,
       );
     }
     await retry.evaluate(async (element) => {
@@ -231,7 +248,12 @@ for (const [engine, theme] of [
           : "Marked Review notes done. Reopen it under Resolved.",
       )
       .waitFor();
-    await page.getByRole("button", { name: "Reopen", exact: true }).waitFor();
+    await page
+      .getByRole("button", { name: labels.reopen, exact: true })
+      .waitFor();
+    await page
+      .getByRole("heading", { name: labels.resolved, exact: true })
+      .waitFor();
     assert.equal(writes, 1);
     assert.deepEqual(errors, []);
     records.push({

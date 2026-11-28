@@ -9,6 +9,7 @@ import {
   DialogFooter,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useTranslation } from "@/i18n";
 import { ClientError } from "@/lib/client";
 
 export class ActionUnavailable extends Error {
@@ -81,6 +82,7 @@ export function useActionConfirmation(
   },
   options?: { overlayClassName: string },
 ) {
+  const { t } = useTranslation();
   const [state, setState] = useState<ConfirmationState | null>(null);
   const [notice, setNotice] = useState("");
   const remembered = useRef<Confirmation | null>(null);
@@ -203,7 +205,11 @@ export function useActionConfirmation(
                 ref={cancelButton}
                 className="confirmation-action"
                 isDisabled={pending}
-                label={unavailable ? "Close" : "Cancel"}
+                label={
+                  unavailable
+                    ? t("confirmation.close", "Close")
+                    : t("confirmation.cancel", "Cancel")
+                }
                 onClick={close}
                 variant="secondary"
               />
@@ -216,7 +222,7 @@ export function useActionConfirmation(
                     pending
                       ? action.pendingLabel
                       : state?.phase === "retry"
-                        ? "Try again"
+                        ? t("confirmation.retry", "Try again")
                         : action.confirmLabel
                   }
                   onClick={() => void submit(action)}

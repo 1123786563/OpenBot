@@ -1765,3 +1765,11 @@ Connections 清单单列内置调度工具，Routines 不进入外部应用数�
 | `/ideas` | 3 3 3 3 3 3 3 3 3 3 | 30/40 | Bot 范围和忽略后果清楚。Orca 在建议读取失败时重复播报，重试后焦点回到建议标题。待复评术语一致性和有建议时的完整操作。 |
 
 自动检测在两个视图的源码和 8 个桌面、窄屏、浅深主题首屏样本中报告 0 项。该检测范围为默认隔离状态，故障状态的截断由设计评审发现。缩短审批重试标签后，Chromium 和 WebKit 在三种宽度和浅深主题下通过 12 次复验，完整标签均可显示，键盘仍分别重试对应请求。修复后的独立评分和真实服务流程仍待验。 [自动检测](/Users/wuyj/.local/state/openbot-spec-127/evidence/web189-detector.O96dPs) · [窄屏修复复验](/Users/wuyj/.local/state/openbot-spec-127/evidence/tasks-retry-label.10gpsL/run.json)
+
+### Tasks 完成与重试复评
+
+| 视图 | 构建 | 测试身份 | H1–H10 | 暂定分 | 设计判断 |
+|---|---|---|---|---:|---|
+| `/tasks` | `e32e29d13` | 隔离 Personal | 3 2 3 3 3 3 2 3 3 3 | 28/40 | 完成确认解释了七天内可重新打开任务，取消恢复原焦点，写入失败可重试。简体中文引导中的「已解决」与页面上的 Resolved 不一致。跨状态搜索和实机读屏播报仍待验。 |
+
+独立自动检测覆盖同一构建的 16 个 Chromium 样本，包括桌面与窄屏、浅色与深色，以及有任务、审批重试、完成确认和提交重试。任务元信息出现 8 次小字号警告，桌面浅色有 4 次嵌套卡片提示，窄屏有 10 次孤词提示。源码检测为 0 项，页面异常为 0。 [自动检测原始记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/web189-detector-main.XHTQ59/run.json) · [完成流程证据](/Users/wuyj/.local/state/openbot-spec-127/evidence/web127-main-e32e29d.oysADh/tasks/run.json)
