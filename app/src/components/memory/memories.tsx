@@ -346,6 +346,7 @@ export function MemoryList({ description }: { description?: ReactNode } = {}) {
                     pendingLabel: "Forgetting…",
                     failureMessage: "Couldn't forget this memory. Try again.",
                     successMessage: "Memory forgotten.",
+                    focusSuccessNotice: true,
                     trigger,
                     fallbackFocus: () =>
                       searchInput.current ??

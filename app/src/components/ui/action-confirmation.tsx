@@ -35,6 +35,7 @@ type Confirmation = {
   fallbackFocus?: (() => HTMLElement | null) | undefined;
   variant?: "default" | "destructive";
   successMessage?: string;
+  focusSuccessNotice?: boolean;
   refresh?: () => Promise<unknown>;
 };
 
@@ -152,7 +153,12 @@ export function useActionConfirmation(
         {/* Only once there is something to say: an ever-present empty status line answers
             screen-reader and test queries for "the status" before the real notice exists. */}
         {notice ? (
-          <p ref={status} role="status" tabIndex={-1}>
+          <p
+            aria-label={action?.focusSuccessNotice ? notice : undefined}
+            ref={status}
+            role="status"
+            tabIndex={-1}
+          >
             {notice}
           </p>
         ) : null}
@@ -172,6 +178,8 @@ export function useActionConfirmation(
             {...astryxScope}
             className="break-words"
             finalFocus={() => {
+              if (remembered.current?.focusSuccessNotice && status.current)
+                return status.current;
               const opener = remembered.current?.trigger;
               if (
                 opener?.isConnected &&
