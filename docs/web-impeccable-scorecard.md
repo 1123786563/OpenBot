@@ -1892,3 +1892,14 @@ Tasks 和 Ideas 的独立评分见上文。Tasks 内嵌的 Goals 与 Routines �
 四个目录使用 `5fd1f25a` 的桌面、窄屏浅深主题证据；Orca 读取重试来自 `bbbbe63f`。长详情检测构建的 index SHA 以 `cf59b4db` 开头。Slack 和 Routines 连接目前只有基线画面，其余正式评分待验。真实供应商同意、回调和授权变更仍待验证。 [#190](https://github.com/1123786563/OpenBot/issues/190)
 
 独立自动检测执行 70 个 Chromium 场景。源码扫描覆盖 16 个文件，均未报问题。浏览器检测记录 280 项警告，其中 Personal 25 项动作描述在各宽度和主题重复出现小字提示。另有长行与嵌套容器警告。四个目录的 16 个场景无检测发现。全部场景无页面异常和文档横向溢出。 [检测记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/web190-detector.ESLrxr)
+
+### #176 会话首发与交接独立复评
+
+| 视图 | H1–H10 | 暂定分 | 设计判断 |
+|---|---|---:|---|
+| `/start/$startId` | 3 3 4 3 3 3 3 2 4 3 | 31/40 | 可回首页、保留原稿、核对或丢弃。窄屏两个说明连在一起，后续候选分段。 |
+| `/channel/new` | 3 3 3 3 3 2 3 2 3 3 | 28/40 | 复制保留原稿和附件。旧截图在附件展开过程中截断文件名，后续验收等待完整可见再截图。 |
+
+设计复评使用 Team 管理员主线 `d6b529f26` 的断线恢复流程、Personal 较早的附件和剪贴板场景，以及 #312 候选的无交接记录场景。断线恢复目的页只验证到达与消息内容，完整单 Bot 和群聊视图仍待独立评分。真实 Intelligence 网关、读屏和时间过期仍待验。 [#176](https://github.com/1123786563/OpenBot/issues/176)
+
+两份构建的独立自动检测覆盖 60 个 Team 管理员 Chromium 场景。4 个警告是宽屏恢复后编辑器的嵌套容器，20 个建议均为桌面缓动。窄屏与新指引未报告问题，全部场景无页面异常与横向溢出。 [检测记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/web176-detector.HXTjlD)
