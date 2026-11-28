@@ -38,6 +38,11 @@ Web 构建提交为 `ccca02100ed6f9eb68321eb03541053553c04449`，入口 HTML 的
 
 Chromium 使用主线 `bbbbe63fa` 的生产构建和隔离 API，完成 360 个页面样本和 63 个书签样本。页面样本包括 88 个正式视图和两个共享恢复视图，覆盖桌面、窄屏和浅深主题。63 个书签都到达预期地址。页面异常、文档级横向溢出和未实现的模拟接口均为零。首次使用页按预期补上 `step=welcome`。本轮记录首屏与路由行为，完整任务和独立评分继续待验。 [构建清单](/Users/wuyj/.local/state/openbot-spec-127/evidence/current-main-web127.hjF9eT/manifest.json) · [走查汇总](/Users/wuyj/.local/state/openbot-spec-127/evidence/current-main-web127.hjF9eT/summary.json)
 
+
+### 主线 `c9265edbc` 全量复验
+
+用主线生产构建和隔离 API 重新采集 360 个页面样本及三类角色的 63 个书签样本。书签均匹配预期地址。未发现页面异常、文档级横向溢出或未实现的模拟接口。2,324 个可测量的链接文字样本均达到 4.5∶1。仍须验证其余适用的对比位置、真实身份与服务流程、实机读屏和独立评分。正式验收维持 0/88。 [构建清单](/Users/wuyj/.local/state/openbot-spec-127/evidence/web194-main-c9265ed.DLROM4/manifest.json) · [走查汇总](/Users/wuyj/.local/state/openbot-spec-127/evidence/web194-main-c9265ed.DLROM4/summary.json)
+
 ## 书签与退役
 
 21 条书签 × Team 管理员、Team 成员、Personal 共 **63/63**，覆盖六个旧外观入口、Bot 参数、Personal Memory 回退和两个回调参数。两条 Connections 回调在页面消费参数之前经过带参数的目标地址，浏览器历史保存在 `bookmark-history/run.json`。未知 `/s/*` 进入共享恢复页。组件测试另覆盖模拟登录返回和角色变化。 [书签合同](web127-bookmarks.json)
