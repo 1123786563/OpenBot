@@ -1,5 +1,5 @@
-import { createHmac } from "node:crypto";
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { createHmac } from "node:crypto";
 import { eq, inArray, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { run as runBillingPaths } from "../scripts/billing-paths";
@@ -17,6 +17,7 @@ import {
   loadCreditPackTestChannel,
   testRefundTerms,
 } from "../src/billing/credit-pack-test-channel";
+import { createFlexpriceAlipaySweep } from "../src/billing/flexprice-alipay-checkout";
 import { createPaidCreditLedger } from "../src/billing/paid-ledger";
 import { createTestCreditLedger } from "../src/billing/test-credit";
 import { createTestCreditRoutes } from "../src/billing/test-credit-routes";
@@ -2634,3 +2635,201 @@ test("a live channel pays, grants, refunds through its provider and reconciles o
     await liveApi.stop(true);
   }
 }, 20_000);
+
+test("Flexprice Alipay checkout locks the buyer's CNY quote and settles only a matching invoice", async () => {
+  const buyer = accountIds[1];
+  const orderId = crypto.randomUUID();
+  const invoiceId = "inv_openbot_alipay";
+  const customerId = "cus_openbot_alipay";
+  const webhookToken = "fixture-flexprice-webhook-token-0001";
+  let issuedInvoice: unknown;
+  let invoicePaid = false;
+  let reconcileOnQuery = false;
+  let confirmedByAlipay = false;
+  let invoiceCurrency = "cny";
+  let invoiceTotal = "25";
+  let responseInvoiceId = invoiceId;
+  const invoice = () => ({
+    id: responseInvoiceId,
+    customer_id: customerId,
+    metadata: { openbot_account_id: buyer },
+    idempotency_key: `openbot-credit-pack:${orderId}`,
+    invoice_status: "FINALIZED",
+    payment_status: invoicePaid ? "SUCCEEDED" : "PENDING",
+    currency: invoiceCurrency,
+    total: invoiceTotal,
+    amount_due: invoiceTotal,
+    amount_paid: invoicePaid ? "25" : "0",
+    amount_remaining: invoicePaid ? "0" : invoiceTotal,
+    paid_at: invoicePaid ? new Date().toISOString() : undefined,
+  });
+  const flexprice = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      if (request.headers.get("x-api-key") !== "fixture-flexprice")
+        return new Response(null, { status: 401 });
+      const url = new URL(request.url);
+      if (url.pathname === `/v1/customers/external/openbot-alipay-${buyer}`)
+        return Response.json({
+          id: customerId,
+          external_id: `openbot-alipay-${buyer}`,
+        });
+      if (url.pathname === "/v1/invoices" && request.method === "POST") {
+        if (issuedInvoice)
+          return Response.json(
+            { details: { invoice_id: invoiceId } },
+            { status: 409 },
+          );
+        issuedInvoice = await request.json();
+        return new Response(null, { status: 502 });
+      }
+      if (url.pathname === `/v1/invoices/${invoiceId}`)
+        return Response.json(invoice());
+      if (
+        url.pathname === `/v1/invoices/${invoiceId}/alipay-checkout` &&
+        url.searchParams.get("customer_id") === customerId
+      ) {
+        if (request.method === "GET" && reconcileOnQuery) invoicePaid = true;
+        return Response.json({
+          order_id: "pay_openbot_alipay",
+          status: confirmedByAlipay ? "paid" : "pending",
+          amount: "25.00",
+          currency: "CNY",
+          qr_code: "https://qr.alipay.com/fixture",
+          expires_at: new Date(Date.now() + 60_000).toISOString(),
+        });
+      }
+      return new Response(null, { status: 404 });
+    },
+  });
+  const settings = {
+    baseUrl: flexprice.url.origin,
+    apiKey: "fixture-flexprice",
+    webhookToken,
+    merchant: "fixture-flexprice-merchant",
+    productCodes: [code],
+    applicationIds: [openbotApp],
+    accountIds: [buyer, accountIds[0]],
+  };
+  const mountFlexprice = () => {
+    return createTestCreditRoutes({
+      ledger,
+      paid: { ledger: paid, flexpriceAlipay: settings },
+      authenticate: async (request) => {
+        const subject = request.headers.get("x-fixture-subject");
+        return subject && fixtureSubjects.has(subject)
+          ? { issuer, subject }
+          : undefined;
+      },
+    });
+  };
+  let billing = mountFlexprice();
+  const request = (
+    path: string,
+    subject?: string,
+    body?: object,
+    auth?: string,
+  ) =>
+    billing.request(path, {
+      method: body ? "POST" : "GET",
+      headers: {
+        ...(subject ? { "x-fixture-subject": subject } : {}),
+        ...(auth ? { authorization: `Bearer ${auth}` } : {}),
+        "content-type": "application/json",
+      },
+      body: body && JSON.stringify(body),
+    });
+  try {
+    await approvePaths();
+    const product = await publish(2500, 25_000_000n);
+    const root = "/paid/credit-pack/alipay/flexprice";
+    expect((await request(root, bob)).status).toBe(200);
+    const before = BigInt(
+      (await (await request("/paid/balance", bob)).json())
+        .availableMicrocredits,
+    );
+    const verify = `${root}/orders/${orderId}/verify`;
+    const checkout = `${root}/orders/${orderId}/checkout`;
+    const input = { orderId, productCode: code, version: product.version };
+    // Flexprice issued the invoice before the connection failed. Retrying
+    // recovers the same invoice by its idempotency key and keeps the quote.
+    expect((await request(`${root}/orders`, bob, input)).status).toBe(503);
+    await publish(3500, 35_000_000n);
+    expect((await request(`${root}/orders`, bob, input)).status).toBe(200);
+    expect((await request(checkout, alice, {})).status).toBe(404);
+    expect((await request(verify, alice, {})).status).toBe(404);
+    expect(await (await request(checkout, bob, {})).json()).toMatchObject({
+      status: "pending",
+      qrCode: "https://qr.alipay.com/fixture",
+    });
+    expect(issuedInvoice).toMatchObject({
+      customer_id: customerId,
+      idempotency_key: `openbot-credit-pack:${orderId}`,
+      currency: "CNY",
+      line_items: [{ amount: "25.00", quantity: "1" }],
+    });
+
+    const callback = "/credit-pack-flexprice/alipay/callback";
+    const notice = {
+      event_type: "invoice.update.payment",
+      invoice: { id: invoiceId },
+    };
+    expect((await request(callback, undefined, notice)).status).toBe(401);
+    // A payment notice only prompts a fresh read from Flexprice.
+    expect(
+      (await request(callback, undefined, notice, webhookToken)).status,
+    ).toBe(200);
+    expect(await (await request(verify, bob, {})).json()).toMatchObject({
+      state: "pending",
+    });
+    confirmedByAlipay = true;
+    invoicePaid = true;
+    for (const mismatch of ["wrong invoice", "currency", "amount"]) {
+      responseInvoiceId =
+        mismatch === "wrong invoice" ? "inv_other" : invoiceId;
+      invoiceCurrency = mismatch === "currency" ? "usd" : "cny";
+      invoiceTotal = mismatch === "amount" ? "35" : "25";
+      expect((await request(verify, bob, {})).status).toBe(409);
+    }
+    responseInvoiceId = invoiceId;
+    invoiceCurrency = "cny";
+    invoiceTotal = "25";
+    expect(await (await request("/paid/balance", bob)).json()).toMatchObject({
+      availableMicrocredits: before.toString(),
+    });
+
+    invoicePaid = false;
+    reconcileOnQuery = true;
+    billing = mountFlexprice();
+    const sweepErrors: unknown[] = [];
+    await createFlexpriceAlipaySweep({
+      settings,
+      paid,
+      onError: (_orderId, error) => sweepErrors.push(error),
+    })();
+    expect(sweepErrors).toEqual([]);
+    expect(await (await request("/paid/balance", bob)).json()).toMatchObject({
+      availableMicrocredits: (before + 25_000_000n).toString(),
+    });
+
+    for (const result of await Promise.all([
+      request(verify, bob, {}),
+      request(callback, undefined, notice, webhookToken),
+      request(callback, undefined, notice, webhookToken),
+    ]))
+      expect(result.status).toBe(200);
+    expect(await (await request(`${root}/orders`, bob)).json()).toContainEqual(
+      expect.objectContaining({
+        id: orderId,
+        state: "verified",
+        creditsMicrocredits: "25000000",
+      }),
+    );
+    expect(await (await request("/paid/balance", bob)).json()).toMatchObject({
+      availableMicrocredits: (before + 25_000_000n).toString(),
+    });
+  } finally {
+    flexprice.stop(true);
+  }
+});

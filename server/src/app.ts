@@ -7,8 +7,8 @@ import { bodyLimit } from "hono/body-limit";
 import { serveStatic } from "hono/bun";
 import { createBifrostAdminRoutes } from "./admin/bifrost-routes";
 import { createCapabilityChangeRoutes } from "./admin/capability-translate";
-import type { CredentialUsageReader } from "./admin/credential-usage";
 import { enterpriseControls } from "./admin/controls";
+import type { CredentialUsageReader } from "./admin/credential-usage";
 import { createEnterpriseGate } from "./admin/gate";
 import { createNetworkAllowlistRoutes } from "./admin/network-routes";
 import {
@@ -61,6 +61,7 @@ import {
 import type { IdentityProviderStore } from "./auth/identity-provider-store";
 import { desktopAuthPage } from "./auth/native-browser";
 import type { CreditPackTestChannel } from "./billing/credit-pack-test-channel";
+import type { FlexpriceAlipaySettings } from "./billing/flexprice-alipay-checkout";
 import { createPaidCorrectionRoutes } from "./billing/paid-correction-routes";
 import type { PaidCreditLedger } from "./billing/paid-ledger";
 import type {
@@ -651,6 +652,7 @@ export function createApp(
     paidLedger: PaidCreditLedger;
     creditPackTestChannel?: CreditPackTestChannel;
     alipayCreditPackTestChannel?: CreditPackTestChannel;
+    flexpriceAlipay?: FlexpriceAlipaySettings;
     /** How a signed-in person maps to a Billing Account; absent uses the actor's id as subject. */
     identityOf?: (actor: { id: string }) => VerifiedBillingIdentity;
     casdoorIdentityOf?: (
@@ -1032,6 +1034,7 @@ export function createApp(
           ledger: billing.paidLedger,
           creditPackTestChannel: billing.creditPackTestChannel,
           alipayCreditPackTestChannel: billing.alipayCreditPackTestChannel,
+          flexpriceAlipay: billing.flexpriceAlipay,
         },
         authenticate: async (request, intent) => {
           if (intent === "execution")

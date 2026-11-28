@@ -1170,6 +1170,13 @@
       "when": 1795843484377,
       "tag": "0166_flexprice_usage_deliveries",
       "breakpoints": true
+    },
+    {
+      "idx": 167,
+      "version": "7",
+      "when": 1795851288213,
+      "tag": "0167_flexprice_alipay_checkout",
+      "breakpoints": true
     }
   ]
 }

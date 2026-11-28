@@ -29,6 +29,7 @@ export async function reconcilePilotClosure(
   await ledgers.credit.releaseClosedReservations(accountId);
   const errors: { orderId: string; error: string }[] = [];
   for (const order of await ledgers.paid.pendingOrders(accountId)) {
+    if (order.flexpriceCheckout) continue;
     const channel = channels.find(
       (candidate) =>
         candidate.kind === order.channel &&

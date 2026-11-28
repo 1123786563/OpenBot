@@ -106,7 +106,7 @@ const exists = async (client: postgres.Sql, table: string) => {
   return row?.present !== null && row?.present !== undefined;
 };
 
-test("reconciles the deployed Persaas Flexprice journal with main", async () => {
+test("reconciles the deployed Persaas Flexprice journal and applies Alipay checkout", async () => {
   const folder = fileURLToPath(new URL("../drizzle", import.meta.url));
   const deployedFlexpriceStamp = 1795843484377;
   const promptAttachmentsTag = "0165_direct_chat_prompt_attachments";
@@ -141,6 +141,9 @@ test("reconciles the deployed Persaas Flexprice journal with main", async () => 
     ).toHaveLength(0);
     expect(
       await client`select event_id from flexprice_usage_deliveries`,
+    ).toHaveLength(0);
+    expect(
+      await client`select flexprice_checkout, flexprice_invoice_id from paid_orders`,
     ).toHaveLength(0);
   } finally {
     await client.end({ timeout: 5 });
