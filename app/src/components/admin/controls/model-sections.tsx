@@ -10,7 +10,7 @@ import {
   IconShieldLock,
 } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useId, useRef, useState } from "react";
 import { HarnessMark } from "@/components/agents/harness-mark";
 import { astryxScope } from "@/components/astryx-pilot/theme";
 import {
@@ -393,6 +393,7 @@ export function AllowedModelsDialog({
 }) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
+  const modelIdHelp = useId();
   const searchInput = useRef<HTMLInputElement>(null);
   const saveErrorMessage = useRef<HTMLParagraphElement>(null);
   useEffect(() => {
@@ -574,6 +575,7 @@ export function AllowedModelsDialog({
             }}
           >
             <Input
+              aria-describedby={modelIdHelp}
               aria-label="Another model"
               className="min-h-11"
               disabled={saving}
@@ -591,6 +593,9 @@ export function AllowedModelsDialog({
               Add
             </Button>
           </form>
+          <p className="text-muted-foreground text-sm" id={modelIdHelp}>
+            Enter the full provider and model ID, for example openai/gpt-4o.
+          </p>
           {defaultName && !selected.includes(defaultName) ? (
             <p className="wrap-anywhere text-muted-foreground text-sm">
               {defaultName} is the default and stays offered. With Only allowed
@@ -638,7 +643,7 @@ export function AllowedModelsDialog({
             size="lg"
             type="button"
           >
-            {saving ? "Saving…" : "Save"}
+            {saving ? "Saving…" : saveError ? "Retry save" : "Save"}
           </DeploymentButton>
         </DialogFooter>
       </DialogContent>

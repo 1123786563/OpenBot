@@ -45,7 +45,8 @@ export function ProvidersPage() {
         <ReadStatus kind="loading" message="Loading model settings…" />
       ) : !settings.isSuccess ? (
         <ReadError
-          message="Couldn't load these settings."
+          description="Provider availability and recent usage load separately."
+          message="Couldn't load conversation and allowed model settings."
           retry={settings.refetch}
           retrying={settings.isFetching}
           retryBelow
