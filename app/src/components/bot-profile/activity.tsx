@@ -448,7 +448,7 @@ function AllActivityItem({
       ) : null}
       <ItemContent>
         <ItemTitle>{title}</ItemTitle>
-        <ItemDescription>
+        <ItemDescription className="line-clamp-none text-sm">
           {activity
             ? activitySummary(activity)
             : "Couldn't load this Bot's activity."}
