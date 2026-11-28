@@ -69,8 +69,12 @@ export const Route = createFileRoute("/_authed/_app/channel/new")({
    * search values are JSON-parsed, so a Bot id made of digits would otherwise arrive as a number
    * and the link would open an empty composer instead of the one it names.
    */
-  validateSearch: (search: Record<string, unknown>): { agent?: string } =>
-    searchTextEntry("agent", search.agent),
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { agent?: string; new?: true } => ({
+    ...searchTextEntry("agent", search.agent),
+    ...(search.new === true ? { new: true } : {}),
+  }),
   /*
    * Which new conversation this is. Every arrival here that this page did not make itself is a
    * fresh one: the + button (pressed once or many times), a Bot's profile link, Back to an earlier
@@ -167,7 +171,7 @@ function NewConversation({
     copiedFromStart,
     copiedStartId,
   };
-  const { agent: urlAgent } = Route.useSearch();
+  const { agent: urlAgent, new: creatingBot } = Route.useSearch();
   const original =
     owner && copiedStartId ? readPendingStart(owner, copiedStartId) : null;
   const originalFiles =
@@ -209,11 +213,17 @@ function NewConversation({
     );
   };
   const queryClient = useQueryClient();
-  const [creatingBot, setCreatingBot] = useState(false);
   const [pickerOpen, setPickerOpen] = useState<boolean | undefined>(undefined);
   const [recipientFilter, setRecipientFilter] = useState("");
   const [focusMessageAfterPick, setFocusMessageAfterPick] = useState(false);
   const navigate = Route.useNavigate();
+  const closeBotCreation = () =>
+    void navigate({
+      replace: true,
+      resetScroll: false,
+      search: (previous) => ({ ...previous, new: undefined }),
+      state: historyState,
+    });
   const { submit: submitStart, error: saveError } =
     useSubmitConversationStart(owner);
   const roster = useQuery(agentListQueryOptions());
@@ -388,7 +398,12 @@ function NewConversation({
               ref={newBotButton}
               onClick={() => {
                 setPickerOpen(false);
-                setCreatingBot(true);
+                void navigate({
+                  replace: true,
+                  resetScroll: false,
+                  search: (previous) => ({ ...previous, new: true }),
+                  state: historyState,
+                });
               }}
             />
           ) : null}
@@ -586,10 +601,13 @@ function NewConversation({
         finalFocus={() =>
           emptyRoster ? newBotButton.current : pickerInput.current
         }
-        open={creatingBot}
-        onClose={() => setCreatingBot(false)}
+        leavesDraft={({ next }) =>
+          next.routeId !== Route.id || next.search.new !== true
+        }
+        open={creatingBot === true}
+        onClose={closeBotCreation}
         onCreated={(agentId) => {
-          setCreatingBot(false);
+          closeBotCreation();
           void queryClient
             .fetchQuery(agentQueryOptions(agentId))
             .then((profile) => {

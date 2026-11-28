@@ -43,6 +43,8 @@
   "banner.update.ready": "OpenBot {version} 已可安装。安装需要几分钟。",
   "banner.update.restarting": "正在重启…",
   "banner.update.status": "正在下载…",
+  "bots.create.discardDescription": "Bot 的详细信息和连接设置将丢失。",
+  "bots.create.discardTitle": "舍弃这个 Bot 草稿？",
   "bots.handoff.loadFailed": "无法加载此 Bot 可以求助的 Bot",
   "bots.retryChoices": "重新加载可选 Bot",
   "components.preview.heading": "预览",

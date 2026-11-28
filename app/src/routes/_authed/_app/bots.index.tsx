@@ -91,6 +91,9 @@ function BotsPage() {
       />
       {personal ? <WhatYourBotsKnow /> : null}
       <NewBotSheet
+        leavesDraft={({ next }) =>
+          next.routeId !== Route.id || next.search.new !== true
+        }
         finalFocus={() =>
           createdBot.current ? false : document.getElementById("bots-new")
         }

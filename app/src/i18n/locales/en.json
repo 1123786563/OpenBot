@@ -43,6 +43,8 @@
   "banner.update.ready": "OpenBot {version} is ready to install. It takes a few minutes.",
   "banner.update.restarting": "Restarting…",
   "banner.update.status": "Downloading…",
+  "bots.create.discardDescription": "Your Bot details and connection settings will be lost.",
+  "bots.create.discardTitle": "Discard this Bot draft?",
   "bots.handoff.loadFailed": "Couldn’t load the Bots this Bot can ask",
   "bots.retryChoices": "Retry loading Bot choices",
   "components.preview.heading": "Preview",

@@ -22,9 +22,11 @@ import {
   type ComponentProps,
   type RefObject,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
+import { DraftLeaveConfirmation } from "@/components/admin/controls/draft-leave-confirmation";
 import { HarnessMark } from "@/components/agents/harness-mark";
 import AgentOrb from "@/components/agents/orb/agent-orb";
 import { BusinessComputerLink } from "@/components/edition/team-features-dialog";
@@ -51,6 +53,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
+import { useTranslation } from "@/i18n";
 import {
   type AgentFormValues,
   agentFormSchema,
@@ -96,21 +99,28 @@ export function NewBotSheet({
   onCreated,
   finalFocus,
   onOpenChangeComplete,
+  leavesDraft,
 }: {
   open: boolean;
+  leavesDraft?: ComponentProps<typeof DraftLeaveConfirmation>["leavesDraft"];
   onClose: () => void;
   finalFocus?: ComponentProps<typeof SheetContent>["finalFocus"];
   onOpenChangeComplete?: ComponentProps<typeof Sheet>["onOpenChangeComplete"];
   /** The new Bot's id, so the caller can take the person to it. */
   onCreated: (agentId: string) => void;
 }) {
+  const { t } = useTranslation();
   const submitting = useRef(false);
+  const hasDraft = useRef(false);
   return (
     <Sheet
       onOpenChange={(next, event) => {
         if (next) return;
         if (submitting.current) event.cancel();
-        else onClose();
+        else {
+          if (leavesDraft && hasDraft.current) event.cancel();
+          onClose();
+        }
       }}
       onOpenChangeComplete={onOpenChangeComplete}
       open={open}
@@ -123,7 +133,24 @@ export function NewBotSheet({
         variant="inset"
       >
         {/* Inside the popup, so it unmounts on close and a reopened sheet starts empty. */}
-        <NewBotFlow onCreated={onCreated} submitting={submitting} />
+        <NewBotFlow
+          hasDraft={hasDraft}
+          onCreated={onCreated}
+          submitting={submitting}
+        />
+        {open && leavesDraft && (
+          <DraftLeaveConfirmation
+            description={t(
+              "bots.create.discardDescription",
+              "Your Bot details and connection settings will be lost.",
+            )}
+            hasDraft={hasDraft}
+            leavesDraft={leavesDraft}
+            saving={false}
+            submitting={submitting}
+            title={t("bots.create.discardTitle", "Discard this Bot draft?")}
+          />
+        )}
       </SheetContent>
     </Sheet>
   );
@@ -196,10 +223,12 @@ function defaultInstructions(name: string, runtime: Runtime): string {
  * `min-h-0` and no overflow of its own shrinks and paints over the footer instead.
  */
 function NewBotFlow({
+  hasDraft,
   onCreated,
   submitting,
 }: {
   onCreated: (agentId: string) => void;
+  hasDraft: RefObject<boolean>;
   submitting: RefObject<boolean>;
 }) {
   const personal =
@@ -266,6 +295,25 @@ function NewBotFlow({
   });
   const [leftOut, setLeftOut] = useState<Set<string>>(() => new Set());
   const reduceMotion = useReducedMotion();
+
+  const dirty =
+    !createdId &&
+    Boolean(
+      name ||
+        instructions ||
+        isolated ||
+        visibility !== "private" ||
+        runtime?.kind === "managed" ||
+        endpoint ||
+        key ||
+        leftOut.size,
+    );
+  useLayoutEffect(() => {
+    hasDraft.current = dirty;
+    return () => {
+      hasDraft.current = false;
+    };
+  }, [dirty, hasDraft]);
 
   // A deployment with no Bot of its own cannot run one here, so nothing is chosen for the person.
   useEffect(() => {
