@@ -44,8 +44,8 @@ import {
 } from "../src/agents/agent-resolver";
 import {
   mintRunAssertion,
-  readRunAssertion,
   type RunAssertion,
+  readRunAssertion,
 } from "../src/agents/callback-token";
 import { wireCoordination } from "../src/agents/coordination-wiring";
 import { createAgentFetch } from "../src/agents/endpoint";
@@ -5478,6 +5478,96 @@ test("only the owner can stop an active Run and the stopped Run rejects a late a
     await database.delete(users).where(eq(users.id, stranger.id));
   }
 });
+
+test.each(["completed", "failed"])(
+  "an approval remains pending without a time limit and closes when its Run is %s",
+  async (status) => {
+    const actor = await person();
+    const bot = await profiles.create(actor, {
+      name: "Approval lifetime Bot",
+      title: "Bot",
+      roleDescription: "Answers locally.",
+      visibility: "private",
+    });
+    const release = Promise.withResolvers<void>();
+    const app = web(database, actor, bot.id, () => release.promise, {
+      partial: "Partial output.",
+    });
+    const { channel } = await (
+      await app.request("/api/channels", post({ agentIds: [bot.id] }))
+    ).json();
+    const runId = "approval-lifetime";
+    let now = Date.now();
+    const approvals = createApprovalStore(database, undefined, () => now);
+    try {
+      const response = await app.request(
+        `/api/copilotkit/agent/${bot.id}/run`,
+        post({
+          threadId: channel.threadId,
+          runId,
+          messages: [{ role: "user", id: runId, content: "Hello." }],
+        }),
+      );
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("Missing Run stream.");
+      let partial = "";
+      while (!partial.includes("Partial output.")) {
+        const read = await reader.read();
+        if (read.done) throw new Error("Run ended before sending output.");
+        partial += new TextDecoder().decode(read.value);
+      }
+      const request = await approvals.open({
+        threadId: channel.threadId,
+        runId,
+        toolCallId: "call",
+        actionDigest: "digest",
+        actorId: actor.id,
+        botId: bot.id,
+        toolRef: "fixture",
+        scope: "fixture",
+        effect: "fixture",
+        args: {},
+      });
+      now += 30 * 24 * 60 * 60 * 1000;
+      expect(await approvals.get(actor.id, request.id)).toMatchObject({
+        status: "pending",
+      });
+      if (status === "failed")
+        release.reject(new Error("Fixture Run failure."));
+      else release.resolve();
+      while (!(await reader.read()).done) {
+        // Drain the Run until its terminal state is committed.
+      }
+      const [run] = await database
+        .select({ status: directChatRuns.status })
+        .from(directChatRuns)
+        .where(
+          and(
+            eq(directChatRuns.threadId, channel.threadId),
+            eq(directChatRuns.id, runId),
+          ),
+        );
+      expect(run?.status).toBe(status);
+      expect(await approvals.get(actor.id, request.id)).toMatchObject({
+        status: "denied",
+        result: { error: "The Bot run ended before this action was approved." },
+      });
+      expect(
+        (
+          await app.request(
+            `/api/approvals/${request.id}/decision`,
+            post({ decision: "allow_once" }),
+          )
+        ).status,
+      ).toBe(404);
+    } finally {
+      release.resolve();
+      await database.delete(channels).where(eq(channels.id, channel.id));
+      await database.delete(agents).where(eq(agents.id, bot.id));
+      await database.delete(users).where(eq(users.id, actor.id));
+    }
+  },
+);
 
 test("a revoked account loses its live Run and a restored account must start a new Run", async () => {
   const alice = await person();

@@ -109,6 +109,9 @@ export const decisionInvalidated =
 export const runStoppedBeforeApproval =
   "The Bot run was stopped before this action was approved.";
 
+export const runEndedBeforeApproval =
+  "The Bot run ended before this action was approved.";
+
 /** The endings after which nothing ran. A step the check just before it turned away is told apart below. */
 const NEVER_RAN = new Set([
   DECLINED_BY_PERSON,
@@ -116,6 +119,7 @@ const NEVER_RAN = new Set([
   WITHDRAWN_RULE_ALLOWS,
   decisionInvalidated,
   runStoppedBeforeApproval,
+  runEndedBeforeApproval,
   NOT_DONE,
 ]);
 
