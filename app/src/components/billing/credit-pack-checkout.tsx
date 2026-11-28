@@ -645,11 +645,17 @@ function LiveCreditPackCheckout() {
   });
   const orders = useQuery({
     queryKey: keys.orders,
-    enabled: Boolean(offer.data),
-    queryFn: async ({ signal }) =>
-      z
-        .array(orderSchema)
-        .parse(await (await client(`${livePath}/orders`, { signal })).json()),
+    retry: false,
+    queryFn: async ({ signal }) => {
+      try {
+        return z
+          .array(orderSchema)
+          .parse(await (await client(`${livePath}/orders`, { signal })).json());
+      } catch (error) {
+        if (error instanceof ClientError && error.status === 404) return [];
+        throw error;
+      }
+    },
   });
   const attempts = useRef(new Map<string, string>());
   const place = useMutation({
@@ -674,7 +680,7 @@ function LiveCreditPackCheckout() {
     onSettled: () =>
       queryClient.invalidateQueries({ queryKey: billingKeys.all }),
   });
-  if (!offer.data && !offer.isError) return null;
+  if (!offer.data && !offer.isError && !orders.data?.length) return null;
   return (
     <PageSection title="Buy Credit Packs">
       <PageRows>
@@ -717,14 +723,13 @@ function LiveCreditPackCheckout() {
             </Text>
           </Item>
         ) : null}
-        {offer.data &&
-          orders.data?.map((order) => (
-            <LiveOrderRow
-              key={order.id}
-              order={order}
-              channels={offer.data?.channels ?? []}
-            />
-          ))}
+        {orders.data?.map((order) => (
+          <LiveOrderRow
+            key={order.id}
+            order={order}
+            channels={offer.data?.channels ?? []}
+          />
+        ))}
       </PageRows>
     </PageSection>
   );
