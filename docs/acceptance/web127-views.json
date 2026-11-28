@@ -197,6 +197,7 @@
   },
   {
     "view": "Team app + grants",
+    "heading": "Fixture Calendar",
     "route": "/connections/$key",
     "path": "/connections/fixture-app",
     "role": "teamAdmin",
@@ -204,6 +205,7 @@
   },
   {
     "view": "Personal app",
+    "heading": "Fixture Calendar",
     "route": "/connections/$key (Personal)",
     "path": "/connections/fixture-app",
     "role": "personal",
@@ -421,6 +423,7 @@
   },
   {
     "view": "Plugin detail",
+    "heading": "Fixture Calendar",
     "route": "/admin/plugins/$key",
     "path": "/admin/plugins/fixture-app",
     "role": "teamAdmin",
@@ -428,6 +431,7 @@
   },
   {
     "view": "Plugin Bot access",
+    "heading": "Sales and Fixture Calendar",
     "route": "/admin/plugins/$key/bots/$agentId",
     "path": "/admin/plugins/fixture-app/bots/whatif-sales",
     "role": "teamAdmin",
@@ -435,6 +439,8 @@
   },
   {
     "view": "Plugin tools",
+    "heading": "fixture-tool",
+    "description": "List upcoming appointments.",
     "route": "/admin/plugins/$key/tools/$tool",
     "path": "/admin/plugins/fixture-app/tools/fixture-tool",
     "role": "teamAdmin",

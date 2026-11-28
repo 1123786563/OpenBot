@@ -1,3 +1,46 @@
+const fixtureApp = {
+  key: "fixture-app",
+  title: "Fixture Calendar",
+  vendor: "Fixture",
+  summary: "Read appointments from a test calendar.",
+  docsUrl: "https://example.test/calendar",
+  auth: "none",
+  perInstance: false,
+};
+
+const fixtureCalendar = {
+  id: fixtureApp.key,
+  title: fixtureApp.title,
+  vendor: fixtureApp.vendor,
+  summary: fixtureApp.summary,
+  docsUrl: fixtureApp.docsUrl,
+  url: "https://example.test/calendar/mcp",
+  provenance: "first-party",
+  hasCredential: false,
+  toolsRefreshedAt: "2026-11-28T00:00:00.000Z",
+  lastError: null,
+  addedBy: null,
+  dynamicClient: false,
+  authScheme: null,
+  tools: [
+    {
+      serverId: fixtureApp.key,
+      name: "fixture-tool",
+      description: "List upcoming appointments.",
+      inputSchema: { type: "object", properties: {} },
+      ref: "fixture-app/fixture-tool",
+      effect: "read",
+      destructive: false,
+      grantedTo: ["whatif-sales"],
+    },
+  ],
+  withdrawn: [],
+  accountMode: "personal",
+  sharedVendorConnected: false,
+  ownerGrants: "any",
+  ownerGrantsChosen: null,
+};
+
 export function firstBatchRead(request, path, json) {
   if (request.method !== "GET") return undefined;
   const skill = {
@@ -50,7 +93,15 @@ export function firstBatchRead(request, path, json) {
       },
     },
     "/api/passwords": { passwordManager: true, logins: [] },
-    "/api/plugins": { catalogue: [], servers: [], skills: [skill] },
+    "/api/plugins": {
+      catalogue: [fixtureApp],
+      servers: [fixtureCalendar],
+      skills: [skill],
+      botsMayCallBack: false,
+      redirectUri: null,
+      composioConfigured: false,
+      authorizesPerAction: false,
+    },
     "/api/plugins/for/whatif-sales": {
       tools: [],
       skills: [skill],
