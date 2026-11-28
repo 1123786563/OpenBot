@@ -41,6 +41,8 @@ Playground 异常来自 Playwright 的 Service Worker 拦截脚本。该脚本�
 - Astryx 构建检测 4 项通过，0 警告，0 失败。#194 定向回归通过。集成全套记录在 wave-2 基线 `6a0756d3f`，尾分片仍有 6 项失败。#194 的独立 fixture 范围内以定向结果为准。
 - Playground 首轮在部分单元捕获到沙箱 iframe 的存储或 Service Worker 异常。复测将主题初始化限制在顶层文档，本地存储异常消失，四个单元仍有 Service Worker 异常。成功发布与真实组件加载仍需适用环境。
 
+构建 `ccca02100` 的 #183 Chromium 复验记录了 28 个共享布局与恢复页样本。工作区、Admin 和 Settings 在 390×844 的浅色与深色下都能用 Escape 关闭抽屉，焦点返回原按钮，共六组。页面异常和文档级横向溢出均为 0。49 项导航定向测试在 15 秒超时下全部通过。首次与浏览器走查并行执行时，有三项达到默认 5 秒超时。原始矩阵见 `~/.local/state/openbot-spec-127/evidence/current-acceptance.z62MJZ/shells-pilot/run.json`。真实读屏和真实依赖故障恢复仍待验。
+
 ## 待验项目
 
 | 项目 | 当前限制 | 所需环境 |
