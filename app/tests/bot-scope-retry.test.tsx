@@ -24,13 +24,14 @@ afterEach(async () => {
   GlobalRegistrator.unregister();
 });
 
-const botListFailure = ["/api/agents"];
+type ScopeRead = "/api/agents" | "/api/me";
+const botListFailure: readonly ScopeRead[] = ["/api/agents"];
 
 test.each<{
   route: typeof IdeasRoute | typeof GoalsRoute | typeof ScreenRoute;
   path: string;
   url: string;
-  failedReads: readonly string[];
+  failedReads: readonly ScopeRead[];
 }>([
   {
     route: IdeasRoute,
@@ -77,7 +78,7 @@ test.each<{
       Object.assign(
         async (input: RequestInfo | URL) => {
           const path = String(input);
-          if (!recovered && failedReads.includes(path))
+          if (!recovered && failedReads.some((read) => read === path))
             return Response.json({}, { status: 503 });
           if (path === "/api/me") return new Response(null, { status: 401 });
           if (path === "/api/routines")
