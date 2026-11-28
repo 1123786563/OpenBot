@@ -318,6 +318,8 @@ test("a durable WeKnora grant gates new credit operations and preserves prior se
     expect((await restarted.beginDispatch(identity, consume)).state).not.toBe(
       "dispatch",
     );
+    const admitted = admissions.find(({ state }) => state === "dispatch");
+    if (admitted) await restarted.releaseUnsent(admitted.accountId, "racing");
     const revokedHoldScope = { ...grant, authorizationId: crypto.randomUUID() };
     await authorizeFresh(revokedHoldScope);
     const revokedHold = await restarted.reserve(identity, {
