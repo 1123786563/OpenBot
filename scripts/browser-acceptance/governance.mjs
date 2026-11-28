@@ -51,6 +51,7 @@ const cells = [];
 for (const viewport of [
   { width: 1440, height: 900 },
   { width: 390, height: 844 },
+  { width: 320, height: 800 },
 ]) {
   for (const theme of ["light", "dark"]) {
     const cell = { viewport, theme, cases: [] };
@@ -326,7 +327,7 @@ for (const viewport of [
         });
       }
 
-      if (viewport.width === 390) {
+      if (viewport.width <= 390) {
         await run("people-actions", {}, async () => {
           const trigger = button("Actions for member@example.test");
           await go("/admin/people", trigger);
