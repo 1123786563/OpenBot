@@ -3,6 +3,31 @@ import type { BrowserRuntime } from "./browser-runtime";
 import { parseNavigateUrl } from "./request-validation";
 
 type Backend = BrowserRuntime["backend"];
+/** Chromium may briefly detach the page while restoring it from the history cache. */
+export async function traverseBrowserHistory(
+  move: (timeout: number) => Promise<unknown>,
+  timeout: number,
+) {
+  const deadline = Date.now() + timeout;
+  try {
+    await move(timeout);
+  } catch (error) {
+    // This command only reads history. The Back or Forward action has not run.
+    if (
+      !(error instanceof Error) ||
+      !error.message.includes(
+        "Protocol error (Page.getNavigationHistory): Not attached to an active page",
+      ) ||
+      deadline - Date.now() <= 50
+    )
+      throw error;
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw error;
+    await move(remaining);
+  }
+}
+
 export type PagePurpose = "read" | "navigate";
 
 /** Navigation can leave an unreadable Chrome error/local page, but cannot inspect it. */

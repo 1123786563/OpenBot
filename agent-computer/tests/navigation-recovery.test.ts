@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
-import { assertPageAccess, navigateWebPage } from "../src/navigation";
+import {
+  assertPageAccess,
+  navigateWebPage,
+  traverseBrowserHistory,
+} from "../src/navigation";
 
 function fixture() {
   let url = "https://example.com/";
@@ -96,4 +100,30 @@ test("navigation waits for a readable document after the new page commits", asyn
 
   await navigateWebPage(page, "https://example.com/", "local-chrome", 1000);
   expect(events).toEqual(["committed", "readable", "disposed"]);
+});
+
+test("a detached history lookup can retry within the original deadline", async () => {
+  const budgets: number[] = [];
+  await traverseBrowserHistory(async (timeout) => {
+    budgets.push(timeout);
+    if (budgets.length === 1)
+      throw new Error(
+        "Protocol error (Page.getNavigationHistory): Not attached to an active page",
+      );
+  }, 1000);
+  expect(budgets).toHaveLength(2);
+  expect(budgets[0]).toBe(1000);
+  expect(budgets[1]).toBeLessThan(1000);
+});
+
+test("a failed history navigation is not submitted a second time", async () => {
+  const failed = new Error("Protocol error (Page.navigateToHistoryEntry)");
+  let requests = 0;
+  await expect(
+    traverseBrowserHistory(async () => {
+      requests++;
+      throw failed;
+    }, 1000),
+  ).rejects.toBe(failed);
+  expect(requests).toBe(1);
 });

@@ -15,7 +15,7 @@ import type {
   BrowserTabsRequest,
   BrowserWindow,
 } from "../../shared/openbot-browser";
-import { navigationFailure } from "./navigation";
+import { navigationFailure, traverseBrowserHistory } from "./navigation";
 import { addressFrom } from "./request-validation";
 
 /** A browser whose tabs the bar works. */
@@ -257,9 +257,12 @@ export function createTabBar(options: { navigationTimeoutMs: number }) {
          * the back and forward cache, which brings a page back whole without loading it again,
          * so it never fires the load events a fresh page does and waiting for one never ends.
          */
-        const history = { ...waiting, waitUntil: "commit" as const };
-        if (go.action === "back") await page.goBack(history);
-        else await page.goForward(history);
+        await traverseBrowserHistory((timeout) => {
+          const history = { timeout, waitUntil: "commit" as const };
+          return go.action === "back"
+            ? page.goBack(history)
+            : page.goForward(history);
+        }, waiting.timeout);
       }
     } catch (error) {
       return navigation(page, since, address, error);
