@@ -78,6 +78,8 @@ Web 构建提交为 `ccca02100ed6f9eb68321eb03541053553c04449`，入口 HTML 的
 
 - #185 在 Web 构建 `87bb5713a` 的 390×844 Chromium 中使用本地 Keycloak 登录 Team 管理员和成员。独立 OpenBot API 创建双 Bot 群聊，成员加入前读取为 404。管理员在浏览器添加成员后，成员可读取群聊并看到两位 Bot 和两位成员。成员移除创建者被拒绝。管理员确认移除成员后，成员请求恢复为 404，重新打开只显示恢复入口。 [群聊权限记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/group-team-members.8gMLMu/run.json) · [构建清单](/Users/wuyj/.local/state/openbot-spec-127/evidence/group-team-members.8gMLMu/manifest.json)
 
+使用构建 `9f72e8f5f` 的隔离 API，按 Personal 和 Team 的实际路由要求启用模拟 Arcade 或 Composio。四个目录入口各在桌面、窄屏及浅深两套主题组合复验，16 个样本均进入预期目录。修正后的全量走查仍有 360 个页面样本和 63 个书签样本，未检测到页面异常、文档级横向溢出或未实现的模拟端点。此轮证据覆盖路由和首屏。真实供应商授权、完整任务和读屏仍待验。 [全量记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/full-broker-corrected.hcLqq1/run.json) · [目录采集修正 PR #261](https://github.com/1123786563/OpenBot/pull/261)
+
 ## 逐页记录
 
 | ID | 视图与路由 | 模拟身份 | 捕获与具体缺口 | H1–H10 | 满分 |
@@ -115,8 +117,8 @@ Web 构建提交为 `ccca02100ed6f9eb68321eb03541053553c04449`，入口 HTML 的
 | `view-31` | GitHub · `/connections/github` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-32` | Slack · `/connections/slack` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-33` | Routines connection · `/connections/routines` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
-| `view-34` | Arcade directory · `/connections/browse/arcade` | Team 管理员 | 4/4。仅捕获 `/connections` 回退。目录需启用对应连接器后复验。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
-| `view-35` | Composio directory · `/connections/browse/composio` | Team 管理员 | 4/4。仅捕获 `/connections` 回退。目录需启用对应连接器后复验。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
+| `view-34` | Arcade directory · `/connections/browse/arcade` | Personal | 4/4。启用对应模拟供应商后进入目录，待验真实授权和完整任务 | 待 待 待 待 待 待 待 待 待 待 | 40 |
+| `view-35` | Composio directory · `/connections/browse/composio` | Personal | 4/4。启用对应模拟供应商后进入目录，待验真实授权和完整任务 | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-36` | /tasks · `/tasks` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-37` | /ideas · `/ideas` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-38` | /responsibilities · `/responsibilities` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
@@ -145,8 +147,8 @@ Web 构建提交为 `ccca02100ed6f9eb68321eb03541053553c04449`，入口 HTML 的
 | `view-61` | Plugin detail · `/admin/plugins/$key` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-62` | Plugin Bot access · `/admin/plugins/$key/bots/$agentId` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-63` | Plugin tools · `/admin/plugins/$key/tools/$tool` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
-| `view-64` | Arcade admin · `/admin/plugins/arcade` | Team 管理员 | 4/4。仅捕获 `/admin/plugins` 回退。Arcade 管理页需启用连接器后复验。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
-| `view-65` | Composio admin · `/admin/plugins/composio` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
+| `view-64` | Arcade admin · `/admin/plugins/arcade` | Team 管理员 | 4/4。启用对应模拟供应商后进入目录，待验真实授权和完整任务 | 待 待 待 待 待 待 待 待 待 待 | 40 |
+| `view-65` | Composio admin · `/admin/plugins/composio` | Team 管理员 | 4/4。启用对应模拟供应商后进入目录，待验真实授权和完整任务 | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-66` | Admin proactive · `/admin/proactive` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-67` | Providers · `/admin/providers` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-68` | Admin skills · `/admin/skills` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
