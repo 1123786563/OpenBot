@@ -68,7 +68,7 @@ def main():
         archive(name, values)
     archive('entry-proxy', {'OPENBOT_PROXY_CONFIG': Path('/opt/1panel/1panel/www/sites/www.persaas.cn/proxy/root.conf').read_text()})
     archive('openobserve', {'ADMIN_EMAIL': credentials['openobserveEmail'], 'ADMIN_PASSWORD': credentials['openobservePassword']})
-    archive('flexprice-admin', {'ADMIN_EMAIL': credentials['adminEmail'], 'ADMIN_PASSWORD': credentials['flexpriceOwnerPassword'], 'CONSOLE_LOCAL_URL': 'http://127.0.0.1:18085', 'FRONTEND_VERSION': 'v2.0.22'})
+    archive('flexprice-admin', {'ADMIN_EMAIL': credentials['adminEmail'], 'ADMIN_PASSWORD': credentials['flexpriceOwnerPassword'], 'CONSOLE_LOCAL_URL': 'http://127.0.0.1:18085', 'CONSOLE_PUBLIC_URL': 'https://flexprice.persaas.cn', 'HTTPS_VHOST_CONFIG': Path('/opt/1panel/1panel/www/conf.d/flexprice.persaas.cn.conf').read_text(), 'HTTPS_PROXY_CONFIG': Path('/opt/1panel/1panel/www/sites/flexprice.persaas.cn/proxy/root.conf').read_text(), 'FRONTEND_VERSION': 'v2.0.22'})
 
 
 if __name__ == '__main__':

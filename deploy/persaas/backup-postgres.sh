@@ -20,6 +20,12 @@ tar -czf "$tmp/configuration.tar.gz" -C /opt \
   persaas/data.yml persaas/flexprice.env persaas/temporal.env persaas/collector.env \
   1panel/1panel/www/sites/openobserve.persaas.cn/proxy/root.conf \
   1panel/1panel/www/sites/www.persaas.cn/proxy/root.conf \
+  1panel/1panel/www/conf.d/flexprice.persaas.cn.conf \
+  1panel/1panel/www/sites/flexprice.persaas.cn/proxy \
+  1panel/1panel/www/sites/flexprice.persaas.cn/ssl \
+  persaas/renew-certificates.sh \
+  1panel/apps/openresty/openresty/1pwaf/data/conf/sites.json \
+  1panel/apps/openresty/openresty/1pwaf/data/sites/flexprice.persaas.cn \
   persaas/infisical-server.env persaas/infisical-worker.env \
   persaas/infisical-flexprice.env persaas/infisical-temporal.env \
   1panel/apps/local/infisical/infisical/.env \

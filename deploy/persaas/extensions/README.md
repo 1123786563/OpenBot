@@ -10,9 +10,13 @@
 | OpenObserve 1.2.0 | https://openobserve.persaas.cn | `openobserveEmail` / `openobservePassword` |
 | Lago 1.57.0 | https://lago.persaas.cn | `adminEmail` / `lagoPassword` |
 | Lago API | https://lago-api.persaas.cn | 管理登录由前端处理 |
-| Flexprice API 2.1.52、控制台 2.0.22 | A 的 `127.0.0.1:18085` | `adminEmail` / `flexpriceOwnerPassword` |
+| Flexprice API 2.1.52、控制台 2.0.22 | https://flexprice.persaas.cn | `adminEmail` / `flexpriceOwnerPassword` |
 
-Flexprice 控制台已构建并启动，原生登录与环境内客户 API 验证成功。公网 `flexprice.persaas.cn` 尚缺 DNS A 记录，暂未配置该域名的 HTTPS。可在 Termius 建立本地端口转发：本机 `127.0.0.1:18085` → A 的 `127.0.0.1:18085`，再打开本机地址。不要把服务端口直接开放到公网。
+Flexprice 控制台已接入 `https://flexprice.persaas.cn/`，HTTP 自动跳转 HTTPS。证书有效至 2027-02-26，已加入现有 `persaas-certificates.timer` 续期脚本。控制台与 `/v1/` API 同源，后端端口仍只监听回环地址。公网原生登录、环境列表和客户 API 均通过；匿名 API 返回 401，公开注册返回 403。浏览器登录页及资源加载通过，本轮未在浏览器中输入账号登录。
+
+该域名由 1Panel 管理的 OpenResty 手动配置，尚未创建面板「网站」数据库记录。配置模板为 [vhost](flexprice-https.conf) 和 [代理](flexprice-https-proxy.conf)，首行标明服务器路径。WAF 保护保持开启；面板重建 WAF 域名映射后可能返回「网站不存在」，此时在入口节点运行仓库的 `register-flexprice-waf.py` 恢复登记。不要直接在面板新建同名站点覆盖现有配置；后续迁入面板管理时保留代理、证书和续期路径。
+
+Infisical 的 **Persaas Infrastructure → prod → /flexprice-admin** 已保存 `CONSOLE_PUBLIC_URL`、`HTTPS_VHOST_CONFIG`、`HTTPS_PROXY_CONFIG`，登录凭据仍为原 `ADMIN_EMAIL`、`ADMIN_PASSWORD`。新配置、证书及 WAF 映射已纳入备份覆盖。本轮归档 `/opt/persaas/backups/postgres-20261128T022943Z.tar.gz`，SHA-256 为 `dae2ef31fddd5d013dec3298aa52caa4595aac9e32dccf22425789a4a4c8c7c3`；本轮未重新恢复数据库或异机复制该新归档。
 
 ## 在 1Panel 中管理
 

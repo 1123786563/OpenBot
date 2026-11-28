@@ -44,3 +44,7 @@
 ## 真实浏览器业务验收更新
 
 后续真实登录、原生聊天、任务、技能和记忆测试，以及 WAF/Opik 修复、附件与目标失败项，见 [平台功能验收](PLATFORM-ACCEPTANCE.md)。该报告更新了此前“追踪和日志未验”的状态，也明确保留了尚未完成的商业计费、沙箱和高可用工作。
+
+## Flexprice public HTTPS update — 2026-11-28
+
+`https://flexprice.persaas.cn/` now serves the console. TLS validation, HTTP redirect, public native authentication and environment-scoped APIs passed. The browser login page loaded successfully. Certificate renewal and configuration backup coverage were updated; see `extensions/README.md` for the manual OpenResty site maintenance limitation. Earlier missing-DNS statements describe the previous acceptance run.

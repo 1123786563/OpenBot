@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 base=/opt/openbot-middleware/skillhub
-for domain in www.persaas.cn sandboxes.persaas.cn casdoor.persaas.cn infisical.persaas.cn openobserve.persaas.cn bifrost.persaas.cn opik.persaas.cn lago.persaas.cn lago-api.persaas.cn; do
+for domain in flexprice.persaas.cn www.persaas.cn sandboxes.persaas.cn casdoor.persaas.cn infisical.persaas.cn openobserve.persaas.cn bifrost.persaas.cn opik.persaas.cn lago.persaas.cn lago-api.persaas.cn; do
   "$base/certbot-venv/bin/certbot" renew --cert-name "$domain" \
     --config-dir "$base/acme-config" --work-dir "$base/acme-work" \
     --logs-dir "$base/acme-logs" --quiet
 done
-for site in www.persaas.cn:www.persaas.cn sandboxes:sandboxes.persaas.cn casdoor.persaas.cn:casdoor.persaas.cn infisical.persaas.cn:infisical.persaas.cn openobserve.persaas.cn:openobserve.persaas.cn bifrost.persaas.cn:bifrost.persaas.cn opik.persaas.cn:opik.persaas.cn lago.persaas.cn:lago.persaas.cn lago-api.persaas.cn:lago-api.persaas.cn; do
+for site in flexprice.persaas.cn:flexprice.persaas.cn www.persaas.cn:www.persaas.cn sandboxes:sandboxes.persaas.cn casdoor.persaas.cn:casdoor.persaas.cn infisical.persaas.cn:infisical.persaas.cn openobserve.persaas.cn:openobserve.persaas.cn bifrost.persaas.cn:bifrost.persaas.cn opik.persaas.cn:opik.persaas.cn lago.persaas.cn:lago.persaas.cn lago-api.persaas.cn:lago-api.persaas.cn; do
   target=/opt/1panel/1panel/www/sites/${site%%:*}/ssl
   source=$base/acme-config/live/${site#*:}
   install -m 644 "$source/fullchain.pem" "$target/fullchain.pem"

@@ -24,7 +24,7 @@
 | Apps | 待接账号 | Connections 目录可见，但没有启用外部应用；不能证明任何第三方业务调用成功 |
 | Credits／预算／充值／扣费 | **未配置完整** | 页面显示 Billing Account unavailable、No model route yet、无 Test Credits；未创建真实收费套餐、未充值、未扣款 |
 | CubeSandbox | **缺现有 API Key** | 健康接口可访问，模板和沙箱接口 401；浏览器/电脑功能不可用。未修改 43.136.78.18 |
-| Flexprice | API 已验、业务未接 | 原生登录、环境内客户 API 通过；公网控制台缺 DNS，OpenBot 仍使用 Lago 用量适配器，尚未切换到 Flexprice |
+| Flexprice | 公网 HTTPS 已验、业务未接 | 原生登录、环境列表、环境内客户 API 与浏览器登录页通过，见文末更新。OpenBot 仍使用 Lago 用量适配器，尚未切换到 Flexprice |
 | Redis | 当前方案已确认 | 2026-11-28 用户确认先保留共享单实例、按应用分 DB，后续升级 Sentinel；不再作为本阶段阻塞项。当前无自动故障切换 |
 | 语音、转录、共享与高级管理策略 | 未全面验收 | 未提供语音服务、第三方账号等依赖；只检查了部分管理页面，不将未测项记为通过 |
 
@@ -79,7 +79,7 @@ Trace 仅含状态、时间和 duration 等元数据；此轮没有为测试上�
 - 附件：前端 `toMessageContent` 生成分段内容，但 `server/src/channels/direct-chat.ts` 的 `promptMessage` 只接受字符串。需要完整解决持久化、重放和附件授权，不能简单丢弃附件改成纯文本后宣称通过。
 - 目标：`server/src/responsibilities/wiring.ts` 的执行仍依赖 Intelligence runner；当前部署为 OpenBot 原生运行模式。需要接入原生后台执行后再测。语音归档和历史提示也需要在该模式下排查。
 - 商业计费：尚需账户、费率、预算、Test Credits、用量出站全链路和支付策略；Lago 测试事件不能代替真实业务结算验证。
-- 补齐 CubeSandbox 现有 API Key、Flexprice DNS、第三方服务凭据后才能完成对应功能验收。不得为绕过缺失密钥修改 CubeSandbox 主机。
+- 补齐 CubeSandbox 现有 API Key、第三方服务凭据后才能完成对应功能验收。Flexprice DNS 与 HTTPS 已在后续更新中完成。不得为绕过缺失密钥修改 CubeSandbox 主机。
 - Sentinel 已按用户决定列为后续升级项。对象存储/ClickHouse/Kafka/Redis 完整备份及自动异机复制仍待完成。
 
 ## 复验与备份
@@ -91,3 +91,9 @@ Trace 仅含状态、时间和 duration 等元数据；此轮没有为测试上�
 - 归档已复制到应用节点 `/opt/persaas/backups/platform-backup-20261128.tar.gz`，SHA 一致；增加了采集器环境和两个代理配置的恢复覆盖。它仍不包含 ClickHouse 业务数据和 RustFS 对象。
 
 本轮临时部署公钥已从两台主机删除，本机临时私钥和备份中转文件已移除；专用服务隧道密钥保留。主站退出后 `/api/me` 返回 401；浏览器验收标签已关闭。1Panel 临时密码文件与本轮会话缓存已删除。
+
+## Flexprice public HTTPS update — 2026-11-28
+
+DNS on the entry host resolves `flexprice.persaas.cn` to `129.28.39.52`. The certificate expires on 2027-02-26. HTTPS returns 200 with successful certificate validation; HTTP redirects with 301. Native login, environments and environment-scoped customers return 200 through the public origin. Anonymous API access returns 401 and public signup returns 403. The browser displays the login page without resource HTTP errors; browser form login and billing operations were not tested in this update.
+
+The endpoint and proxy configs are archived in Infisical Infrastructure `/flexprice-admin`. See the middleware guide for manual OpenResty/WAF maintenance details. This update does not switch OpenBot billing to Flexprice.
