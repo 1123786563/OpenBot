@@ -28,7 +28,7 @@ import {
   RunContextRevokedError,
 } from "@openbot/toolkit/run-context";
 import type { TurnRunner } from "@openbot/toolkit/run-turn";
-import { and, asc, desc, eq, isNull, min, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, min, or, sql } from "drizzle-orm";
 import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import type { HandoffCaps } from "../agents/handoff";
@@ -51,6 +51,7 @@ import {
 } from "../db/schema/core";
 import { directChatRuns } from "../db/schema/direct-chat";
 import { groupBotThreads, groupMessages } from "../db/schema/group";
+import { workItems } from "../db/schema/work";
 import { withdrawLearningEvidence } from "../learning/evidence";
 import { leadingSkillCommand } from "../plugins/picked-skill";
 import type { CheckPrivateShare } from "../proactive/private-share";
@@ -137,6 +138,13 @@ export type GroupStore = {
     agentId: string,
   ): Promise<string>;
   submit(turn: GroupTurn): Promise<void>;
+  isTurnStopped(turn: GroupTurn): Promise<boolean>;
+  activeTurnIds(ownerUserId: string, channelId: string): Promise<string[]>;
+  stopTurn(
+    ownerUserId: string,
+    channelId: string,
+    messageId: string,
+  ): Promise<boolean>;
   start(
     turn: GroupTurn,
     agentId: string,
@@ -148,7 +156,7 @@ export type GroupStore = {
     text: string,
     status: GroupMessage["status"],
     details?: Record<string, unknown>,
-  ): Promise<void>;
+  ): Promise<boolean>;
   /** The reply so far, while the Bot is still running. A finished row is never overwritten. */
   progress(id: string, text: string): Promise<void>;
   /** Remember the order the person chose, by minting each Bot's thread in that order. */
@@ -262,6 +270,124 @@ export function createGroupStore(
     async submit(turn) {
       await database.transaction((tx) => submitGroupTurn(tx, turn));
     },
+    async isTurnStopped(turn) {
+      const [row] = await database
+        .select({ id: groupMessages.id })
+        .from(groupMessages)
+        .where(
+          and(
+            eq(groupMessages.id, turn.messageId),
+            eq(groupMessages.channelId, turn.channelId),
+            eq(groupMessages.ownerUserId, turn.ownerUserId),
+            sql`${groupMessages.details}->>'stopReason' = 'stopped'`,
+          ),
+        );
+      return Boolean(row);
+    },
+    async activeTurnIds(ownerUserId, channelId) {
+      const rows = await database
+        .select({ id: groupMessages.id })
+        .from(groupMessages)
+        .innerJoin(
+          workItems,
+          and(
+            eq(workItems.kind, GROUP_TURN_KIND),
+            eq(workItems.key, groupMessages.id),
+          ),
+        )
+        .where(
+          and(
+            eq(groupMessages.ownerUserId, ownerUserId),
+            eq(groupMessages.channelId, channelId),
+            isNull(groupMessages.agentId),
+            isNull(workItems.finishedAt),
+          ),
+        );
+      return rows.map(({ id }) => id);
+    },
+    async stopTurn(ownerUserId, channelId, messageId) {
+      return database.transaction(async (tx) => {
+        await lockGroupMembership(tx, { channelId, userId: ownerUserId });
+        const [prompt] = await tx
+          .select()
+          .from(groupMessages)
+          .where(
+            and(
+              eq(groupMessages.id, messageId),
+              eq(groupMessages.channelId, channelId),
+              eq(groupMessages.ownerUserId, ownerUserId),
+              isNull(groupMessages.agentId),
+            ),
+          );
+        if (!prompt) throw new GroupNotFoundError();
+        const [work] = await tx
+          .update(workItems)
+          .set({
+            finishedAt: sql`now()`,
+            claimedBy: null,
+            leaseUntil: null,
+            updatedAt: sql`now()`,
+          })
+          .where(
+            and(
+              eq(workItems.kind, GROUP_TURN_KIND),
+              eq(workItems.key, messageId),
+              isNull(workItems.finishedAt),
+            ),
+          )
+          .returning({ payload: workItems.payload });
+        if (!work) return false;
+        const turn = groupTurnSchema.parse(work.payload);
+        if (
+          turn.ownerUserId !== ownerUserId ||
+          turn.channelId !== channelId ||
+          turn.messageId !== messageId
+        )
+          throw new GroupNotFoundError();
+
+        const replyIds = turn.agentIds.map(
+          (agentId) => `${messageId}:${agentId}`,
+        );
+        const replies = await tx
+          .select()
+          .from(groupMessages)
+          .where(
+            and(
+              eq(groupMessages.ownerUserId, ownerUserId),
+              eq(groupMessages.channelId, channelId),
+              inArray(groupMessages.id, replyIds),
+              inArray(groupMessages.status, ["running", "waiting"]),
+            ),
+          )
+          .for("update");
+        for (const reply of replies) {
+          if (reply.threadId)
+            await stopDirectChatRun(
+              tx,
+              {
+                threadId: reply.threadId,
+                runId: runIdFor(reply.id),
+              },
+              "stopped",
+              false,
+            );
+        }
+        await tx
+          .update(groupMessages)
+          .set({
+            status: "failed",
+            text: sql`case when ${groupMessages.agentId} is null then ${groupMessages.text} else '' end`,
+            details: sql`${groupMessages.details} || '{"stopReason":"stopped"}'::jsonb`,
+          })
+          .where(
+            inArray(groupMessages.id, [
+              messageId,
+              ...replies.map(({ id }) => id),
+            ]),
+          );
+        return true;
+      });
+    },
     async start(turn, agentId, threadId, native) {
       const id = `${turn.messageId}:${agentId}`;
       return database.transaction(async (tx) => {
@@ -269,6 +395,11 @@ export function createGroupStore(
           channelId: turn.channelId,
           userId: turn.ownerUserId,
         });
+        const [prompt] = await tx
+          .select({ details: groupMessages.details })
+          .from(groupMessages)
+          .where(eq(groupMessages.id, turn.messageId));
+        if (prompt?.details.stopReason === "stopped") return "done";
         const [existing] = await tx
           .select({
             status: groupMessages.status,
@@ -329,10 +460,17 @@ export function createGroupStore(
       });
     },
     async finish(id, text, status, details = {}) {
-      await database
+      const [saved] = await database
         .update(groupMessages)
         .set({ text, status, details })
-        .where(eq(groupMessages.id, id));
+        .where(
+          and(
+            eq(groupMessages.id, id),
+            sql`${groupMessages.details}->>'stopReason' is distinct from 'stopped'`,
+          ),
+        )
+        .returning({ id: groupMessages.id });
+      return Boolean(saved);
     },
     async progress(id, text) {
       await database
@@ -1178,6 +1316,7 @@ export function createGroupConversations(deps: {
           : PERSON_INITIATOR,
       });
       await writing;
+      if (deps.native && (await deps.store.isTurnStopped(turn))) return;
       await guard?.beforeDispatch();
       const gate = await shareGate({
         ownerUserId: turn.ownerUserId,
@@ -1200,7 +1339,7 @@ export function createGroupConversations(deps: {
         return;
       }
       await guard?.beforeDispatch();
-      await deps.store.finish(id, result.replyText, "completed");
+      if (!(await deps.store.finish(id, result.replyText, "completed"))) return;
       saved = true;
       savedReply = result.replyText;
       await deps.activity?.(turn, agentId, result.replyText, `group:${id}`);
@@ -1209,6 +1348,7 @@ export function createGroupConversations(deps: {
       relayStarted = true;
       await relay(turn, bot, id, result.replyText, bots, runId);
     } catch (error) {
+      if (deps.native && (await deps.store.isTurnStopped(turn))) return;
       if (guard?.signal.aborted) {
         await writing;
         if (!saved)
@@ -1540,6 +1680,9 @@ export function createGroupConversations(deps: {
       return {
         bots,
         backgroundRuns,
+        stoppableTurnIds: deps.native
+          ? await deps.store.activeTurnIds(owner, channel)
+          : [],
         people: people.map((person, index) => ({
           ...person,
           // The first member made the group, and is the one who may take others out of it.
@@ -1564,6 +1707,7 @@ export function createGroupConversations(deps: {
           ...(details.consent && typeof details.consent === "object"
             ? { consent: details.consent }
             : {}),
+          ...(details.stopReason === "stopped" && { stopReason: "stopped" }),
           ...(details.stopReason === CONTEXT_REVOKED && {
             stopReason: CONTEXT_REVOKED,
             reason: CONTEXT_REVOKED_MESSAGE,
@@ -1578,6 +1722,11 @@ export function createGroupConversations(deps: {
             : {}),
         })),
       };
+    },
+    async stop(owner: string, channel: string, messageId: string) {
+      if (!deps.native)
+        throw new GroupRefusedError("Stopping group runs is unavailable.");
+      return { stopped: await deps.store.stopTurn(owner, channel, messageId) };
     },
     async send(owner: string, channel: string, input: unknown) {
       const body = z
@@ -1662,6 +1811,7 @@ export function createGroupConversations(deps: {
           owner: deps.owner,
         });
       } catch (error) {
+        if (deps.native && (await deps.store.isTurnStopped(turn))) return true;
         if (error instanceof GroupNotFoundError) {
           await deps.queue.finish({
             kind: item.kind,
@@ -1735,6 +1885,15 @@ export function createGroupRoutes(
   routes.get("/:channelId", async (context) =>
     context.json(
       await service.list(context.var.actor.id, context.req.param("channelId")),
+    ),
+  );
+  routes.post("/:channelId/turns/:messageId/stop", async (context) =>
+    context.json(
+      await service.stop(
+        context.var.actor.id,
+        context.req.param("channelId"),
+        context.req.param("messageId"),
+      ),
     ),
   );
   routes.post("/:channelId", async (context) =>

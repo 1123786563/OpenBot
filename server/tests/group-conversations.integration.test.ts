@@ -150,6 +150,7 @@ function service(options: {
     (input: Parameters<TurnRunner>[0]) => string | Promise<string>
   >;
   maxDepth?: number;
+  native?: boolean;
   granted?: boolean;
   auditFails?: boolean;
   privateShare?: Parameters<typeof createGroupConversations>[0]["privateShare"];
@@ -161,6 +162,7 @@ function service(options: {
   const calls: Parameters<TurnRunner>[0][] = [];
   const audit: AuditEventInput[] = [];
   const conversations = createGroupConversations({
+    native: options.native,
     store: createGroupStore(database, () => threadIdentity.mint()),
     queue: createWorkQueue(database),
     owner: `${prefix}-replica`,
@@ -237,6 +239,113 @@ async function readUntil(
 }
 
 describe("group conversations in PostgreSQL", () => {
+  test("only the sender can stop a queued group turn, and repeated stops don't dispatch", async () => {
+    const owner = await person();
+    const teammate = await person();
+    const ada = await bot(owner, "Ada");
+    const grace = await bot(owner, "Grace");
+    const { conversations, calls } = service({ native: true, replies: {} });
+    const channel = await conversations.create(owner.id, {
+      agentIds: [ada, grace],
+    });
+    await conversations.addMember(owner.id, channel.id, {
+      email: teammate.email,
+    });
+    const id = `${prefix}-queued-stop`;
+    await conversations.send(owner.id, channel.id, {
+      id,
+      text: "A queued message",
+    });
+    expect(
+      (await conversations.list(owner.id, channel.id)).stoppableTurnIds,
+    ).toEqual([id]);
+    expect(
+      (await conversations.list(teammate.id, channel.id)).stoppableTurnIds,
+    ).toEqual([]);
+    await expect(
+      conversations.stop(teammate.id, channel.id, id),
+    ).rejects.toBeInstanceOf(GroupNotFoundError);
+    expect(await conversations.stop(owner.id, channel.id, id)).toEqual({
+      stopped: true,
+    });
+    expect(await conversations.stop(owner.id, channel.id, id)).toEqual({
+      stopped: false,
+    });
+    expect(await conversations.sweep()).toBe(false);
+    expect(calls).toEqual([]);
+    expect(await conversations.list(owner.id, channel.id)).toMatchObject({
+      stoppableTurnIds: [],
+      messages: [{ id, text: "A queued message", stopReason: "stopped" }],
+    });
+  });
+
+  test("stopping an active group turn preserves an unknown dispatch outcome and cancels later Bots", async () => {
+    const owner = await person();
+    const ada = await bot(owner, "Ada");
+    const grace = await bot(owner, "Grace");
+    const started = Promise.withResolvers<{ id: string; threadId: string }>();
+    const release = Promise.withResolvers<void>();
+    const { conversations, calls } = service({
+      native: true,
+      replies: {
+        [ada]: async (input) => {
+          const { runId: id, threadId } = input;
+          if (!id || !threadId) throw new Error("Missing group Run");
+          await database.insert(directChatRuns).values({
+            id,
+            threadId,
+            groupThreadId: threadId,
+            userMessageId: randomUUID(),
+            prompt: "A request under way",
+            status: "running",
+            externalOutcome: "dispatching",
+          });
+          input.onText?.("Private partial reply");
+          started.resolve({ id, threadId });
+          await release.promise;
+          return "A late reply";
+        },
+        [grace]: () => "This Bot must not run",
+      },
+    });
+    const channel = await conversations.create(owner.id, {
+      agentIds: [ada, grace],
+    });
+    const messageId = `${prefix}-active-stop`;
+    await conversations.send(owner.id, channel.id, {
+      id: messageId,
+      text: "A request under way",
+    });
+    const sweeping = conversations.sweep();
+    try {
+      const active = await started.promise;
+      expect(await conversations.stop(owner.id, channel.id, messageId)).toEqual(
+        { stopped: true },
+      );
+      const result = await conversations.list(owner.id, channel.id);
+      expect(result.backgroundRuns).toMatchObject([
+        {
+          id: active.id,
+          stopReason: "stopped",
+          status: "failed",
+          externalOutcome: "unknown",
+        },
+      ]);
+      expect(result.messages).toMatchObject([
+        { id: messageId, stopReason: "stopped" },
+        { agentId: ada, text: "", stopReason: "stopped" },
+      ]);
+    } finally {
+      release.resolve();
+      await sweeping;
+    }
+    expect(calls.map(({ agentId }) => agentId)).toEqual([ada]);
+    expect(await conversations.sweep()).toBe(false);
+    expect(
+      (await conversations.list(owner.id, channel.id)).messages,
+    ).not.toContainEqual(expect.objectContaining({ text: "A late reply" }));
+  });
+
   test("retrying group creation and its first message preserves one transcript and one turn per Bot", async () => {
     const owner = await person();
     const ada = await bot(owner, "Ada");
