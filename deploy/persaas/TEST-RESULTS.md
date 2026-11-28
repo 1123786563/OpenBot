@@ -64,3 +64,17 @@
 按用户最新要求，Infrastructure 仅管理容器实际引用的 env：16 个项目、27 份文件，读回一致、差异为 0、非 env 项为 0。曾上传的 Compose、证书、其他配置和管理员凭据目录已清理；本机原配置及 root 专用回滚备份保留。旧归档入口已改为 env-only，详细流程见 INFISICAL-MIDDLEWARE.md。四个运行身份访问 Infrastructure 均为 403。
 
 Bifrost JSON 已删除 providers/auth_config，setup token 从 env 注入，容器重新创建后控制台 200、匿名管理接口 401、setup token 存在。既有模型和管理员数据库保留。本轮此前真实推理复验返回 400，未将其标记为通过。容器环境迁移前后完整 Compose 展开结果一致，A 的 27 个中间件容器保持运行。
+
+
+## 2026-11-28 — env ownership and directory cleanup
+
+- Infrastructure/prod now contains 17 middleware folders and 28 env-file entries: 27 files on A across 16 middleware folders, plus the B Collector env. No non-env entries remain in these folders.
+- Runtime/prod contains only `/server` (33 application settings) and `/worker` (13). Flexprice/Temporal migrated to Infrastructure with values compared against rendered Compose before migration; destination readback and apply both passed with zero changes.
+- Removed duplicate inline Flexprice settings; the running environment is unchanged. The migration tool now shares the same two fixed settings from the env file.
+- Removed eight old Runtime middleware folders and five obsolete Infrastructure folders. Removed the two SDK export services from `data.yml`; their bootstrap env files moved to the root-private migration backup. `sync-config.sh` reads Infrastructure through the middleware tool.
+- B API and Worker one-shot containers successfully loaded current Runtime settings. Each verified DATABASE_URL exists and the child has no INFISICAL_CLIENT_SECRET. Existing API remained healthy and Worker/Collector running.
+- A middleware check: all 16 folders report zero changed files. Collector env normalized through Compose matches the eight actual B Collector environment values. The configuration portion of the backup script built its archive successfully after paths were updated; this was not a new database restore test.
+- Bifrost JSON verified without providers/auth_config, with env.BIFROST_SETUP_TOKEN. Main site, Bifrost, Flexprice and Infisical HTTPS each returned 200. A had 27 running containers and no unhealthy container.
+- Local middleware verification: five checks passed, including independent Flexprice/Temporal updates within the shared Compose file. Shell syntax validation passed.
+
+This verifies configuration migration and service availability. It does not supersede the unresolved business acceptance items recorded above.

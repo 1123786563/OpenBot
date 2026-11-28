@@ -15,9 +15,17 @@ docker exec "$pg" sh -c 'pg_dumpall -U "$POSTGRES_USER" --globals-only' > "$tmp/
 docker exec persaas-lago-postgres pg_dump -U lago -Fc --dbname lago > "$tmp/lago.dump"
 docker exec persaas-mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysqldump -uroot --single-transaction --routines --triggers --events --no-tablespaces opik' > "$tmp/opik.sql"
 docker exec -u 0 persaas-lago-api cat /lago-secrets/keys.json > "$tmp/lago-secrets.json"
-tar -czf "$tmp/configuration.tar.gz" -C /opt \
+# Include container env files discovered from current middleware stacks.
+python3 - <<'PYENV' > "$tmp/middleware-env.paths"
+import runpy
+m = runpy.run_path('/opt/persaas/middleware-config.py')
+paths = {path for name, compose in m['projects']().items() for path in m['env_files'](compose, name).values()}
+for path in sorted(paths):
+    print(path.relative_to('/opt'))
+PYENV
+tar -czf "$tmp/configuration.tar.gz" -C /opt -T "$tmp/middleware-env.paths" \
   persaas/credentials.json persaas/server.env persaas/worker.env \
-  persaas/data.yml persaas/flexprice.env persaas/temporal.env persaas/collector.env \
+  persaas/data.yml persaas/runtime/flexprice.env persaas/runtime/temporal.env persaas/collector.env \
   1panel/1panel/www/sites/openobserve.persaas.cn/proxy/root.conf \
   1panel/1panel/www/sites/www.persaas.cn/proxy/root.conf \
   1panel/1panel/www/conf.d/flexprice.persaas.cn.conf \
@@ -27,7 +35,6 @@ tar -czf "$tmp/configuration.tar.gz" -C /opt \
   1panel/apps/openresty/openresty/1pwaf/data/conf/sites.json \
   1panel/apps/openresty/openresty/1pwaf/data/sites/flexprice.persaas.cn \
   persaas/infisical-server.env persaas/infisical-worker.env \
-  persaas/infisical-flexprice.env persaas/infisical-temporal.env \
   1panel/apps/local/infisical/infisical/.env \
   1panel/apps/local/bifrost/bifrost/.env 1panel/apps/local/bifrost/bifrost/bifrost.json \
   1panel/apps/local/bifrost/bifrost/docker-compose.yml \

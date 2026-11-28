@@ -92,6 +92,10 @@ def projects():
         name = labels['com.docker.compose.project']
         name = {'persaas-data': 'data-services', 'redis-cluster-master': 'redis'}.get(name, name)
         result[name] = path
+    data = ROOT / 'data.yml'
+    if data in result.values():
+        result.pop('data-services', None)
+        result.update(flexprice=data, temporal=data)
     return result
 
 
@@ -102,13 +106,14 @@ def definition(compose, unresolved=False):
     return json.loads(run(*args, cwd=compose.parent))
 
 
-def env_files(compose):
+def env_files(compose, project=None):
     paths = set()
+    selected = ROOT / 'runtime' / (str(project) + '.env') if project in ('flexprice', 'temporal') else None
     for service in definition(compose, True)['services'].values():
         for item in service.get('env_file', []):
             path = Path(item['path'] if isinstance(item, dict) else item)
-            # These exports are owned by the existing Runtime folders.
-            if path.parent != ROOT / 'runtime':
+            # Each shared-stack env belongs to its middleware folder.
+            if (selected is not None and path == selected) or (selected is None and path.parent != ROOT / 'runtime'):
                 paths.add(path)
     return {('ENV_' + re.sub('[^A-Za-z0-9]', '_', path.name).upper() + '_' + hashlib.sha256(str(path).encode()).hexdigest()[:10].upper()): path for path in sorted(paths)}
 
@@ -128,7 +133,7 @@ def materialize(compose):
         values = before['services'].get(name, {}).get('environment', {})
         if not values or not service.get('environment'):
             continue
-        # Existing Runtime export files stay authoritative.
+        # Shared-stack env files are managed by their middleware folders.
         existing = service.get('env_file', [])
         if any('/runtime/' in str(item) or str(item).startswith('runtime/') for item in (existing if isinstance(existing, list) else [existing])):
             continue
@@ -156,8 +161,8 @@ def materialize(compose):
         raise
 
 
-def apply_env(compose, values, write=False):
-    files = env_files(compose)
+def apply_env(compose, values, write=False, project=None):
+    files = env_files(compose, project)
     if set(values) != set(files):
         raise RuntimeError('Vault must contain exactly the discovered .env files')
     changes = [(path, values[key]) for key, path in files.items() if env_text(path.read_text()) != values[key]]
@@ -203,17 +208,20 @@ def main():
             materialize(compose)
             print(folder + ': container environment preserved')
             continue
-        files = env_files(compose)
+        files = env_files(compose, folder)
+        if not files:
+            continue
         if args.action == 'push':
             values = {key: env_text(path.read_text()) for key, path in files.items()}
             vault.write(folder, values)
             count = len(files)
             print(folder + ': verified ' + str(count) + ' env files')
         else:
-            count = apply_env(compose, vault.read(folder), args.action == 'apply')
+            count = apply_env(compose, vault.read(folder), args.action == 'apply', folder)
             print(folder + ': ' + str(count) + ' changed env files')
             if args.restart:
-                run('docker', 'compose', '-f', str(compose), 'up', '-d', '--force-recreate', cwd=compose.parent)
+                services = ['--no-deps', folder] if folder in ('flexprice', 'temporal') else []
+                run('docker', 'compose', '-f', str(compose), 'up', '-d', '--force-recreate', *services, cwd=compose.parent)
         report.append({'project': folder, 'count': count})
     if vault:
         atomic(ROOT / 'middleware-config-report.json', json.dumps({'action': args.action, 'projects': report, 'time': time.time()}, indent=2))

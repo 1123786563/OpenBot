@@ -1,16 +1,18 @@
 # 仅管理容器环境变量
 
-2026-11-28 已在 A（129.28.39.52）完成：16 个运行项目，共 27 份容器实际引用的 env 文件，已写入 **Persaas Infrastructure → prod** 并逐项读回一致。差异检查均为 0。Compose、证书、配置文件和管理员凭据目录已从此次集中配置中移除，服务器原文件保留。
+2026-11-28 已在 A（129.28.39.52）完成：16 个中间件目录，共 27 份 A 节点容器实际引用的 env 文件，已写入 **Persaas Infrastructure → prod** 并逐项读回一致。差异检查均为 0。Compose、证书、配置文件和管理员凭据目录已从此次集中配置中移除，服务器原文件保留。
 
-OpenBot、Worker、Flexprice 和 Temporal 继续使用 **Persaas Runtime → prod** 中原有目录。Flexprice 的 `FLEXPRICE_DEPLOYMENT_MODE`、`GOMEMLIMIT` 也已补入 Runtime。不要把生成的 `runtime/*.env` 再作为第二份可编辑来源上传。
+**Persaas Runtime → prod 只保留 `/server`、`/worker`**，分别保存 OpenBot API 和 Worker 的应用配置。Flexprice、Temporal 已迁入 **Persaas Infrastructure → prod** 的 `/flexprice`、`/temporal`，每个目录保存对应 `runtime/<服务>.env` 的全文。目录名 `runtime/` 是本地文件路径，不代表 Infisical 项目归属。应用连接中间件所需的 URL、密钥仍属于应用配置，保留在 Runtime。
+
+Infrastructure 另有 `/collector`，保存 B 节点 OpenTelemetry Collector 的 env 文件；合计 17 个目录、28 份 env。已删除 Runtime 中 8 个旧中间件目录、Infrastructure 的 5 个无用目录和旧同步身份配置。Compose、JSON、证书、模型、管理员账号清单均不存入这两个项目的容器 env 管理目录。清理前的恢复备份仅在 A 的 root 私有 `/opt/persaas/backups/project-boundary-<时间>/` 中保留。
 
 ## 在 Infisical 中修改
 
-Infrastructure 的目录对应 Compose 项目名，例如 `/bifrost`、`/casdoor`、`/mysql`、`/redis`、`/opik`、`/lago`、`/kafka`、`/persaas-kafka`、`/rustfs`。每个 `ENV_<文件名>_<路径摘要>` 键保存一份 env 文件的文本，直接编辑其中的 `NAME=value`。没有容器 env_file 的项目目录可以为空。
+Infrastructure 的目录对应 Compose 项目名，例如 `/bifrost`、`/casdoor`、`/mysql`、`/redis`、`/opik`、`/lago`、`/kafka`、`/persaas-kafka`、`/rustfs`。每个 `ENV_<文件名>_<路径摘要>` 键保存一份 env 文件的文本，直接编辑其中的 `NAME=value`。没有容器 env_file 的项目不创建空目录。
 
 容器环境已整理到各应用原目录的 `.container-<服务名>.env`，Compose 通过 `env_file` 读取；整理前后完整的 Compose 展开结果比较一致。1Panel 的项目 `.env` 仍保留给面板参数使用，但不会因“默认存在”就上传，只有被服务明确声明为 env_file 的文件才纳入管理。
 
-应用运行身份依然不能读取 Infrastructure（四个身份实测 403）。本机 root 引导凭据保留在 `/opt/persaas/credentials.json`；Infisical 自身及其数据库、Redis 的 env 文件必须保留本地副本，保证停机后可恢复。
+OpenBot 和 Worker 使用原有 Runtime 只读身份，不授予 Infrastructure 权限。Flexprice、Temporal 原有的 Runtime 导出容器已移除，`infisical-flexprice.env`、`infisical-temporal.env` 已移入私有备份；下发改由 A 本机管理脚本完成。本机 root 引导凭据保留在 `/opt/persaas/credentials.json`；Infisical 自身及其数据库、Redis 的 env 文件必须保留本地副本，保证停机后可恢复。
 
 ## 上传、检查和下发
 
@@ -31,6 +33,8 @@ python3 /opt/persaas/middleware-config.py apply --project bifrost --restart
 
 未来新增的 Compose 若还内联环境变量，可先执行 `materialize --project NAME`，把当前环境转为 env_file；此命令需要服务器已安装的 PyYAML，只在完整 Compose 展开结果不变时保存修改。它不重启容器。不要把管理员或模型配置重新写入 Bifrost JSON。
 
+`bash /opt/persaas/sync-config.sh` 现在只从 Infrastructure 下发 Temporal、Flexprice。需要生效时，再重建对应服务；`apply --project flexprice --restart` 仅重建 Flexprice，不会连带重建 Temporal。B 节点的 Collector env 下发后需在 B 上重建 Collector，A 的发现工具只覆盖 A 节点。
+
 旧入口 `archive-panel-config.py` 已改为仅调用 env 上传，不会重新归档 Compose、证书或 JSON 配置。
 
 ## Bifrost
@@ -45,4 +49,4 @@ python3 /opt/persaas/middleware-config.py apply --project bifrost --restart
 python3 deploy/persaas/tests/test_middleware_config.py
 ```
 
-需要 Docker Compose。覆盖只采集实际引用的 env、拒绝非 env 项、无效 dotenv 恢复，以及有效修改重复下发。生产环境已核对 16 个项目、27 份 env、0 个非 env 项；27 个中间件容器保持运行。
+需要 Docker Compose。覆盖只采集实际引用的 env、拒绝非 env 项、无效 dotenv 恢复、有效修改重复下发，以及共享 Compose 中 Flexprice/Temporal 的独立下发。生产环境 A 的 16 个中间件目录、27 份 env 差异均为 0；另保留 Infrastructure `/collector` 的 1 份 B 节点 env。

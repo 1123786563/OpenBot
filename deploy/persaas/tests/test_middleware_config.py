@@ -35,3 +35,18 @@ with tempfile.TemporaryDirectory() as directory:
     assert m.apply_env(compose, good, True) == 1
     assert m.apply_env(compose, good, True) == 0
     print('PASS valid env update is idempotent')
+
+    runtime = root / 'runtime'
+    runtime.mkdir()
+    for service in ['flexprice', 'temporal']:
+        (runtime / (service + '.env')).write_text('TOKEN="' + service + '-fixture"\n')
+    shared = root / 'data.yml'
+    shared.write_text('services:\n  flexprice:\n    image: busybox:1.37\n    env_file: runtime/flexprice.env\n  temporal:\n    image: busybox:1.37\n    env_file: runtime/temporal.env\n')
+    flex = m.env_files(shared, 'flexprice')
+    temporal = m.env_files(shared, 'temporal')
+    assert list(flex.values()) == [runtime / 'flexprice.env']
+    assert list(temporal.values()) == [runtime / 'temporal.env']
+    before_temporal = (runtime / 'temporal.env').read_text()
+    assert m.apply_env(shared, {key: 'TOKEN="new-flex"' for key in flex}, True, 'flexprice') == 1
+    assert (runtime / 'temporal.env').read_text() == before_temporal
+    print('PASS shared-stack middleware folders update only their own env file')

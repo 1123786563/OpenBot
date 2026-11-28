@@ -5,8 +5,6 @@ import { dirname } from "node:path";
 const required = {
   "/server": "DATABASE_URL",
   "/worker": "DATABASE_URL",
-  "/flexprice": "FLEXPRICE_POSTGRES_PASSWORD",
-  "/temporal": "POSTGRES_PWD",
 };
 
 export async function settings(environment) {
