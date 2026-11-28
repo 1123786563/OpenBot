@@ -25,6 +25,7 @@ for attempt in $(seq 1 30); do
     case "${1:-}" in
       "") bun --no-env-file scripts/browser-acceptance/first-batch.mjs ;;
       --first-attachment) bun --no-env-file scripts/browser-acceptance/first-attachment.mjs ;;
+      --group-stop) bun --no-env-file scripts/browser-acceptance/group-stop.mjs ;;
       --full-sweep) bun --no-env-file scripts/browser-acceptance/full-sweep.mjs ;;
       *) echo "Unknown capture option: $1" >&2; exit 2 ;;
     esac

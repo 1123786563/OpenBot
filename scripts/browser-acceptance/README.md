@@ -23,3 +23,7 @@ The isolated Vite wrapper injects a minimal desktop IPC fixture before the real 
 ## First-message attachment handoff
 
 Set `BUILD_DIR` to a production build that includes the attachment handoff, `BUILD_MANIFEST` to its JSON manifest containing `commit` and `indexSha256`, and `EVIDENCE_DIR` to an absolute output directory. Run `scripts/browser-acceptance/first-batch.sh --first-attachment` from the worktree root. The script uses an isolated fixture to exercise an interrupted read, then checks the multipart upload in the new conversation and the unchanged reference in the original draft. It writes four screenshots and `run.json`.
+
+## Group turn stop
+
+Use a production build that includes group turn Stop, its `BUILD_MANIFEST`, and an absolute `EVIDENCE_DIR`. Run `scripts/browser-acceptance/first-batch.sh --group-stop` from the worktree root. The fixture returns a 503 on the first Stop request. Chromium reaches Stop with Tab, activates it with Enter, retries in place, and checks that the stopped state appears without another message being sent. The script writes four screenshots and `run.json` with the build and request counts.
