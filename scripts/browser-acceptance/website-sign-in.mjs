@@ -32,6 +32,7 @@ const session = await fetch(
 assert.equal(session.status, 302);
 
 const requestId = "fixture-sign-in";
+const savedUsername = `${"long-account-name".repeat(12)}@example.test`;
 const requestPath = `/api/sign-in-requests/${requestId}`;
 const result = await fetch(FIXTURE_API_URL + requestPath);
 assert(result.ok);
@@ -86,6 +87,9 @@ try {
               ...request,
               status,
               threadId: conversation.threadId,
+              savedLogins: [
+                { id: "fixture-saved-login", username: savedUsername },
+              ],
               origin:
                 "https://a-long-account-sign-in-subdomain.staging.example.test",
             },
@@ -118,6 +122,21 @@ try {
           ),
           false,
         );
+        const account = page.getByText(savedUsername, { exact: true });
+        await account.waitFor();
+        const accountLayout = await account.evaluate((element) => {
+          const range = document.createRange();
+          range.selectNodeContents(element);
+          const lines = [...range.getClientRects()];
+          return {
+            lineCount: new Set(lines.map((line) => line.top)).size,
+            fitsViewport: lines.every(
+              (line) => line.left >= 0 && line.right <= innerWidth,
+            ),
+          };
+        });
+        assert(accountLayout.fitsViewport);
+        if (width === 390) assert(accountLayout.lineCount > 1);
         await page.screenshot({
           path: join(EVIDENCE_DIR, `${width}-${theme}-restored.png`),
         });
@@ -160,6 +179,7 @@ try {
           reads,
           writes,
           retryFocusRestored: true,
+          accountLayout,
           verificationFormRestored: true,
           expiredFormRemoved: true,
           returnedToConversation: destination,
