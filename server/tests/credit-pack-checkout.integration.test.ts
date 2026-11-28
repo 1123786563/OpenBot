@@ -2878,6 +2878,7 @@ test("Flexprice two-channel checkout locks the buyer's CNY quote and settles onl
   let invoiceCurrency = "cny";
   let invoiceTotal = "25";
   let responseInvoiceId = invoiceId;
+  let refundSubmitted = false;
   const invoice = () => ({
     id: responseInvoiceId,
     customer_id: customerId,
@@ -2916,6 +2917,22 @@ test("Flexprice two-channel checkout locks the buyer's CNY quote and settles onl
       if (url.pathname === `/v1/invoices/${invoiceId}`)
         return Response.json(invoice());
       if (
+        url.pathname ===
+        `/v1/invoices/${invoiceId}/payments/pay_openbot_wechat/original-refund`
+      ) {
+        if (request.method === "POST") refundSubmitted = true;
+        return Response.json({
+          invoiceId,
+          paymentId: "pay_openbot_wechat",
+          channel: "wechat",
+          amountCents: 2500,
+          state:
+            refundSubmitted && request.method === "GET"
+              ? "confirmed"
+              : "unknown",
+        });
+      }
+      if (
         url.pathname === `/v1/invoices/${invoiceId}/qr-checkout` &&
         url.searchParams.get("customer_id") === customerId
       ) {
@@ -2949,7 +2966,6 @@ test("Flexprice two-channel checkout locks the buyer's CNY quote and settles onl
     OPENBOT_FLEXPRICE_ALIPAY_URL: flexprice.url.origin,
     OPENBOT_FLEXPRICE_ALIPAY_API_KEY: "fixture-flexprice",
     OPENBOT_FLEXPRICE_ALIPAY_WEBHOOK_TOKEN: webhookToken,
-    OPENBOT_FLEXPRICE_ALIPAY_MERCHANT: "fixture-flexprice-merchant",
     OPENBOT_FLEXPRICE_WECHAT_MERCHANT: "fixture-wechat-merchant",
     OPENBOT_FLEXPRICE_ALIPAY_PRODUCTS: code,
     OPENBOT_FLEXPRICE_ALIPAY_APPLICATION_IDS: openbotApp,
@@ -2958,6 +2974,9 @@ test("Flexprice two-channel checkout locks the buyer's CNY quote and settles onl
   const checkoutSettings = (alipay: boolean, wechat: boolean) =>
     loadFlexpriceAlipaySettings({
       ...environment,
+      OPENBOT_FLEXPRICE_ALIPAY_MERCHANT: alipay
+        ? "fixture-flexprice-merchant"
+        : undefined,
       OPENBOT_FLEXPRICE_ALIPAY_ENABLED: String(alipay),
       OPENBOT_FLEXPRICE_WECHAT_ENABLED: String(wechat),
     });
@@ -3002,6 +3021,7 @@ test("Flexprice two-channel checkout locks the buyer's CNY quote and settles onl
     expect(await (await request(root, bob)).json()).toMatchObject({
       channels: ["wechat"],
     });
+    expect((await request(root, outsider)).status).toBe(404);
     billing = mountFlexprice();
     expect((await request(root, bob)).status).toBe(200);
     const before = BigInt(
@@ -3037,9 +3057,11 @@ test("Flexprice two-channel checkout locks the buyer's CNY quote and settles onl
       channel: "alipay",
     });
     closeConfirmed = true;
-    expect(
-      await (await request(checkout, bob, { channel: "wechat" })).json(),
-    ).toMatchObject({
+    billing = mountFlexprice(false, true);
+    expect((await request(checkout, bob, { channel: "alipay" })).status).toBe(
+      404,
+    );
+    expect(await (await request(checkout, bob, {})).json()).toMatchObject({
       status: "pending",
       channel: "wechat",
       qrCode: "weixin://wxpay/bizpayurl?fixture",
@@ -3082,10 +3104,9 @@ test("Flexprice two-channel checkout locks the buyer's CNY quote and settles onl
 
     invoicePaid = false;
     reconcileOnQuery = true;
-    billing = mountFlexprice();
     const sweepErrors: unknown[] = [];
-    const settings = checkoutSettings(true, true);
-    if (!settings) throw new Error("Expected both checkout channels enabled.");
+    const settings = checkoutSettings(false, true);
+    if (!settings) throw new Error("Expected WeChat checkout enabled.");
     await createFlexpriceAlipaySweep({
       settings,
       paid,
@@ -3112,6 +3133,39 @@ test("Flexprice two-channel checkout locks the buyer's CNY quote and settles onl
     );
     expect(await (await request("/paid/balance", bob)).json()).toMatchObject({
       availableMicrocredits: (before + 25_000_000n).toString(),
+    });
+
+    const admin = createFlexpricePackRefundRoutes(
+      paid,
+      async (context, next) => {
+        context.set("actor", {
+          id: "operator",
+          email: "operator@example.test",
+          role: "admin",
+        });
+        await next();
+      },
+      settings,
+    );
+    const refund = (action: "approve" | "verify") =>
+      admin.request(
+        `/accounts/${buyer}/credit-pack-orders/${orderId}/refund/${action}`,
+        { method: "POST" },
+      );
+    expect((await refund("approve")).status).toBe(202);
+    const confirmed = await refund("verify");
+    expect(confirmed.status).toBe(200);
+    const receipt = await confirmed.json();
+    expect(receipt.refundId).toBeString();
+    expect(receipt.state).toBe("confirmed");
+    expect(await (await refund("approve")).json()).toMatchObject(receipt);
+    expect(await (await refund("verify")).json()).toEqual(receipt);
+    expect(await (await request(verify, bob, {})).json()).toMatchObject({
+      state: "refunded",
+      channel: "wechat",
+    });
+    expect(await (await request("/paid/balance", bob)).json()).toMatchObject({
+      availableMicrocredits: before.toString(),
     });
   } finally {
     flexprice.stop(true);
