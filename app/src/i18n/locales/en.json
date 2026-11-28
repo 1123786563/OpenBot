@@ -233,6 +233,7 @@
   "settings.name.saveFailed": "Your name could not be saved",
   "settings.name.saved": "Your name has been saved.",
   "settings.name.saving": "Saving…",
+  "settings.notifications.description": "Choose where you receive updates when you’re away. Set each Bot’s update frequency on its page.",
   "settings.privacy.changeFailed": "Couldn't change this setting. Try again.",
   "settings.privacy.explanation": "OpenBot sends usage data, linked to your OpenBot account. It never sends your conversations, files or keys. Changes apply the next time OpenBot starts.",
   "settings.privacy.offByEnvironment": "Turned off on this computer. OpenBot sends no usage data.",
