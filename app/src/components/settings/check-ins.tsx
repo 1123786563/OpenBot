@@ -109,7 +109,7 @@ export function CheckInsSection({
               <ItemTitle>
                 {compact ? "Check-ins from all your Bots" : "All your Bots"}
               </ItemTitle>
-              <ItemDescription>
+              <ItemDescription className={compact ? "text-sm" : undefined}>
                 {byAdmin
                   ? "Turned off by your admin."
                   : on
