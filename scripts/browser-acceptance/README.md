@@ -35,3 +35,7 @@ Set `BUILD_DIR`, `BUILD_MANIFEST`, and `EVIDENCE_DIR` as above, then run `script
 ## Route module recovery
 
 Set `BUILD_DIR`, `BUILD_MANIFEST`, and `EVIDENCE_DIR` as above. Run `bun --no-env-file scripts/browser-acceptance/route-recovery.mjs` from the worktree root with Playwright Chromium and WebKit installed. The script serves the archived build and a fixture API on loopback. It returns an HTTP 503 for the Settings route module, retries while the module is unavailable and checks for the fixed asset support code, then restores it and checks that a keyboard retry preserves the original URL and moves focus to the recovered page's heading. The two browsers' module response codes and screenshots are archived with the build identity.
+
+## Tasks confirmation and retry contrast
+
+Use the archived production build and manifest as above, then run `scripts/browser-acceptance/first-batch.sh --task-confirmation`. Chromium and WebKit exercise Tasks at 320 CSS pixels in light and dark mode. The cases cover approvals read recovery, keyboard cancellation and focus restoration, and a committed task completion whose response is lost. The runner samples the retry button as it appears and requires a contrast ratio of at least 4.5:1. It saves screenshots and the raw ratios in `run.json`.

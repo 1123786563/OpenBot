@@ -544,6 +544,11 @@
   padding-inline: var(--spacing-3);
 }
 
+/* Apply foreground and background together when a pending action becomes Retry. */
+[role="alertdialog"] .confirmation-action {
+  transition-property: none;
+}
+
 .confirmation-action[data-variant="primary"] {
   background: var(--color-accent);
   color: var(--color-on-accent);
