@@ -53,6 +53,11 @@ export { PaidLedgerError } from "./paid-ledger-error";
 export { restoreHolds } from "./paid-restore";
 
 const flexpriceOriginalRefund = "flexprice_original_channel";
+const automaticFlexpriceRefundReasons = ["account_suspended", "pilot_closure"];
+const flexpriceRefundReasons = [
+  flexpriceOriginalRefund,
+  ...automaticFlexpriceRefundReasons,
+];
 function isCreditPackChannel(channel: string): channel is CreditPackChannel {
   return channel === "alipay" || channel === "wechat";
 }
@@ -1772,8 +1777,32 @@ export function createPaidCreditLedger(
     orderId: string;
     accountId: string;
   }) {
-    const [row] = await database
+    const [row] = await flexpriceRefundDispatches(
+      and(
+        eq(paidOrders.id, input.orderId),
+        eq(paidOrders.accountId, input.accountId),
+        inArray(paidRefunds.reason, flexpriceRefundReasons),
+      ),
+    );
+    return row;
+  }
+
+  function pendingAutomaticFlexpriceRefunds(after?: string) {
+    return flexpriceRefundDispatches(
+      and(
+        inArray(paidRefunds.reason, automaticFlexpriceRefundReasons),
+        eq(paidRefunds.state, "requested"),
+        eq(paidOrders.state, "refund_pending"),
+        after ? gt(paidOrders.id, after) : undefined,
+      ),
+    );
+  }
+
+  async function flexpriceRefundDispatches(scope: SQL | undefined) {
+    const rows = await database
       .select({
+        orderId: paidOrders.id,
+        accountId: paidOrders.accountId,
         refundId: paidRefunds.id,
         state: paidRefunds.state,
         amountCents: paidRefunds.amountCents,
@@ -1785,19 +1814,30 @@ export function createPaidCreditLedger(
       .innerJoin(paidOrders, eq(paidOrders.id, paidRefunds.orderId))
       .where(
         and(
-          eq(paidOrders.id, input.orderId),
-          eq(paidOrders.accountId, input.accountId),
           eq(paidOrders.flexpriceCheckout, true),
-          eq(paidRefunds.reason, flexpriceOriginalRefund),
+          isNotNull(paidOrders.flexpriceInvoiceId),
+          isNotNull(paidOrders.channelOrderRef),
+          inArray(paidOrders.channel, ["alipay", "wechat"]),
+          isNull(paidRefunds.dispute),
+          eq(paidRefunds.channel, paidOrders.channel),
+          eq(paidRefunds.amountCents, paidOrders.priceCents),
+          scope,
         ),
-      );
-    if (row?.invoiceId && row.paymentId && isCreditPackChannel(row.channel))
-      return {
-        ...row,
-        invoiceId: row.invoiceId,
-        paymentId: row.paymentId,
-        channel: row.channel,
-      };
+      )
+      .orderBy(asc(paidOrders.id))
+      .limit(50);
+    return rows.flatMap((row) =>
+      row.invoiceId && row.paymentId && isCreditPackChannel(row.channel)
+        ? [
+            {
+              ...row,
+              invoiceId: row.invoiceId,
+              paymentId: row.paymentId,
+              channel: row.channel,
+            },
+          ]
+        : [],
+    );
   }
 
   async function applyFlexpricePackRefund(input: {
@@ -1817,7 +1857,9 @@ export function createPaidCreditLedger(
       if (
         !order.flexpriceCheckout ||
         order.accountId !== input.accountId ||
-        refund?.reason !== flexpriceOriginalRefund
+        !refund ||
+        refund.dispute ||
+        !flexpriceRefundReasons.includes(refund.reason)
       )
         throw new PaidLedgerError(
           "order_unknown",
@@ -1828,6 +1870,8 @@ export function createPaidCreditLedger(
         order.flexpriceInvoiceId !== input.invoiceId ||
         order.channelOrderRef !== input.paymentId ||
         order.channel !== input.channel ||
+        refund.channel !== input.channel ||
+        order.priceCents !== input.amountCents ||
         refund.amountCents !== input.amountCents
       )
         throw new PaidLedgerError(
@@ -1840,7 +1884,9 @@ export function createPaidCreditLedger(
           "ledger_restoring",
           "Refund verification is paused during ledger recovery.",
         );
-      return settleRefundWithin(tx, refund, input.state === "confirmed");
+      return settleRefundWithin(tx, refund, input.state === "confirmed", {
+        keepOwed: refund.reason === "account_suspended",
+      });
     });
   }
 
@@ -2000,6 +2046,7 @@ export function createPaidCreditLedger(
     tx: Transaction,
     refund: Refund,
     succeeded: boolean,
+    { keepOwed = false } = {},
   ) {
     const { orderId } = refund;
     if (refund.state === "confirmed") return refund;
@@ -2041,7 +2088,7 @@ export function createPaidCreditLedger(
         .returning();
       return row;
     }
-    if (refund.reason === "pilot_closure") {
+    if (refund.reason === "pilot_closure" || keepOwed) {
       const [row] = await tx
         .update(paidRefunds)
         .set({ state: "manual_owed" })
@@ -2545,6 +2592,7 @@ export function createPaidCreditLedger(
     requestTestPackRefund,
     approveFlexpricePackRefund,
     flexpricePackRefundDispatch,
+    pendingAutomaticFlexpriceRefunds,
     applyFlexpricePackRefund,
     testPackRefundDispatch,
     applyTestPackRefundResult,

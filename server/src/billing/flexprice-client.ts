@@ -12,6 +12,16 @@ const price = z.object({
   status: z.literal("published"),
 });
 const storedEvent = z.object({
+  status: z.enum(["processing", "processed", "failed"]),
+  processed_events: z
+    .array(
+      z.object({
+        customer_id: z.string(),
+        subscription_id: z.string(),
+        meter_id: z.string(),
+      }),
+    )
+    .optional(),
   event: z.object({
     id: z.string(),
     event_name: z.string(),
@@ -109,7 +119,7 @@ export function createFlexpriceUsageClient(options: {
     },
     async send(
       event: SettledUsageProjection,
-    ): Promise<"matched" | "missing" | "mismatch" | "rejected"> {
+    ): Promise<"matched" | "missing" | "pending" | "mismatch" | "rejected"> {
       const properties = {
         operation_id: event.operationId,
         resource: event.resource,
@@ -133,14 +143,24 @@ export function createFlexpriceUsageClient(options: {
         const stored = storedEvent.safeParse(await json(response));
         if (!stored.success) return "mismatch";
         const actual = stored.data.event;
-        return actual.id === event.eventId &&
+        const matches =
+          actual.id === event.eventId &&
           actual.event_name === eventName &&
           actual.external_customer_id === options.externalCustomerId &&
           actual.source === "openbot" &&
           Date.parse(actual.timestamp) === event.occurredAt.getTime() &&
           Object.entries(properties).every(
             ([key, value]) => actual.properties[key] === value,
-          )
+          );
+        if (!matches) return "mismatch";
+        if (stored.data.status === "processing") return "pending";
+        if (stored.data.status === "failed") return "rejected";
+        return stored.data.processed_events?.some(
+          (row) =>
+            row.customer_id === options.customerId &&
+            row.subscription_id === options.subscriptionId &&
+            row.meter_id === options.meterId,
+        )
           ? "matched"
           : "mismatch";
       };

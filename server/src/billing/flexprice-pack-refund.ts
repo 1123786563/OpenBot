@@ -17,12 +17,7 @@ export function createFlexpricePackRefundRoutes(
   settings: { baseUrl: string; apiKey: string; environmentId?: string },
 ) {
   const api = new Hono<{ Variables: AppVariables }>();
-  const origin = new URL(settings.baseUrl);
-  if (
-    !["http:", "https:"].includes(origin.protocol) ||
-    origin.href !== `${origin.origin}/`
-  )
-    throw new Error("Flexprice URL must be an HTTP origin.");
+  const reconcile = createFlexpricePackRefundReconciliation(paid, settings);
 
   const path = "/accounts/:accountId/credit-pack-orders/:orderId/refund";
   for (const action of ["approve", "verify"]) {
@@ -57,31 +52,11 @@ export function createFlexpricePackRefundRoutes(
             { error: "Unknown original-channel refund." },
             404,
           );
-        const { refundId, invoiceId, paymentId, channel, amountCents, state } =
-          dispatch;
-        if (state !== "requested") return context.json({ refundId, state });
-
-        const observed = await readOriginalRefund({
-          invoiceId,
-          paymentId,
-          submit: action === "approve",
-        }).catch(() => undefined);
-        if (
-          !observed ||
-          observed.state === "unknown" ||
-          observed.invoiceId !== invoiceId ||
-          observed.paymentId !== paymentId ||
-          observed.channel !== channel ||
-          observed.amountCents !== amountCents
-        )
-          return context.json({ refundId, state: "unknown" }, 202);
-        const settled = await paid.applyFlexpricePackRefund({
-          ...scope.data,
-          ...observed,
-          refundId,
-          state: observed.state,
-        });
-        return context.json({ refundId, state: settled.state });
+        const result = await reconcile(
+          dispatch,
+          action === "approve" ? "submit" : "verify",
+        );
+        return context.json(result, result.state === "unknown" ? 202 : 200);
       } catch (error) {
         if (error instanceof PaidLedgerError)
           return context.json(
@@ -93,6 +68,53 @@ export function createFlexpricePackRefundRoutes(
     });
   }
   return api;
+}
+
+export function createFlexpricePackRefundReconciliation(
+  paid: PaidCreditLedger,
+  settings: { baseUrl: string; apiKey: string; environmentId?: string },
+) {
+  const origin = new URL(settings.baseUrl);
+  if (
+    !["http:", "https:"].includes(origin.protocol) ||
+    origin.href !== `${origin.origin}/`
+  )
+    throw new Error("Flexprice URL must be an HTTP origin.");
+
+  return async (
+    dispatch: NonNullable<
+      Awaited<ReturnType<PaidCreditLedger["flexpricePackRefundDispatch"]>>
+    >,
+    action: "submit" | "verify" | "automatic",
+  ) => {
+    const { refundId, invoiceId, paymentId, channel, amountCents, state } =
+      dispatch;
+    if (state !== "requested") return { refundId, state };
+    const read = async (submit: boolean) => {
+      const observed = await readOriginalRefund({
+        invoiceId,
+        paymentId,
+        submit,
+      }).catch(() => undefined);
+      if (
+        observed?.invoiceId === invoiceId &&
+        observed.paymentId === paymentId &&
+        observed.channel === channel &&
+        observed.amountCents === amountCents
+      )
+        return observed;
+    };
+    let observed = await read(action === "submit");
+    if (action === "automatic" && observed?.state === "unknown")
+      observed = await read(true);
+    if (!observed || observed.state === "unknown")
+      return { refundId, state: "unknown" as const };
+    const settled = await paid.applyFlexpricePackRefund({
+      ...dispatch,
+      state: observed.state,
+    });
+    return { refundId, state: settled.state };
+  };
 
   async function readOriginalRefund({
     invoiceId,

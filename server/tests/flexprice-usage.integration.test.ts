@@ -61,7 +61,7 @@ test("Flexprice delivery survives outage and async ingest without changing Lago 
     const pending = createFlexpriceUsageExporter(
       db,
       {
-        send: async () => "missing",
+        send: async () => "pending",
       },
       cutover,
     );

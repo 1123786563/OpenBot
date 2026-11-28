@@ -1228,3 +1228,46 @@ test("Billing switches the same live Credit Pack order after confirmation and re
     ui.queryByRole("img", { name: "WeChat Pay payment QR code" }),
   ).toBeNull();
 });
+
+test("Billing keeps existing live orders verifiable when purchases are paused", async () => {
+  const path = "/api/billing/paid/credit-pack/alipay/flexprice";
+  const id = "4a06fd08-73e4-472c-824e-4077bed08946";
+  const order = {
+    id,
+    version: 3,
+    priceCents: 2500,
+    creditsMicrocredits: "25000000",
+    currency: "CNY",
+    entitlementId: null,
+  };
+  let verified = false;
+  const fallback = global.fetch;
+  global.fetch = Object.assign(
+    async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = String(input);
+      if (url === `${path}/orders`)
+        return Response.json([
+          { ...order, state: verified ? "verified" : "pending" },
+        ]);
+      if (url === `${path}/orders/${id}/verify` && init?.method === "POST") {
+        verified = true;
+        return Response.json({ ...order, state: "verified" });
+      }
+      return fallback(input, init);
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+
+  const ui = renderCredits(client());
+  const user = userEvent.setup({ document });
+  await ui.findByText(`Order ${id}`);
+  expect(
+    ui.queryByRole("button", { name: "Place Credit Pack order" }),
+  ).toBeNull();
+  expect(ui.queryByRole("button", { name: "Pay with Alipay" })).toBeNull();
+  await user.click(ui.getByRole("button", { name: "Check payment" }));
+  await waitFor(() => {
+    expect(verified).toBe(true);
+    expect(ui.queryByRole("button", { name: "Check payment" })).toBeNull();
+  });
+});

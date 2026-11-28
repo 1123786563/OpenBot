@@ -23,6 +23,14 @@ const price = {
 function fixture(
   options: { wrongPrice?: boolean; delayed?: boolean; mismatch?: boolean } = {},
 ) {
+  let status = "processed";
+  let processedEvents = [
+    {
+      customer_id: "customer",
+      meter_id: "meter",
+      subscription_id: "subscription",
+    },
+  ];
   let posts = 0;
   let stored: unknown;
   const server = Bun.serve({
@@ -85,6 +93,8 @@ function fixture(
       if (!stored || options.delayed)
         return new Response(null, { status: 404 });
       return Response.json({
+        status,
+        processed_events: processedEvents,
         event: {
           id: options.mismatch ? "conflict" : event.eventId,
           event_name: "openbot_model_usage",
@@ -105,6 +115,21 @@ function fixture(
   return {
     server,
     posts: () => posts,
+    processing(next: string) {
+      status = next;
+      if (next === "processing") processedEvents = [];
+      if (next === "processed")
+        processedEvents = [
+          {
+            customer_id: "customer",
+            meter_id: "meter",
+            subscription_id: "subscription",
+          },
+        ];
+    },
+    setAttribution(rows: typeof processedEvents) {
+      processedEvents = rows;
+    },
     client: createFlexpriceUsageClient({
       baseUrl: server.url.origin,
       apiKey: "private-key",
@@ -150,6 +175,38 @@ test("Flexprice rejects a plan that would charge money", async () => {
   try {
     await expect(f.client.verifyDestination()).rejects.toThrow();
     expect(f.posts()).toBe(0);
+  } finally {
+    f.server.stop(true);
+  }
+});
+
+test("Flexprice polls a matching raw event until attributed without resubmitting it", async () => {
+  const f = fixture();
+  try {
+    f.processing("processing");
+    expect(await f.client.send(event)).toBe("pending");
+    expect(await f.client.send(event)).toBe("pending");
+    f.processing("processed");
+    expect(await f.client.send(event)).toBe("matched");
+    expect(f.posts()).toBe(1);
+  } finally {
+    f.server.stop(true);
+  }
+});
+
+test("Flexprice pauses failed processing and processed events without the expected attribution", async () => {
+  const f = fixture();
+  try {
+    f.processing("failed");
+    expect(await f.client.send(event)).toBe("rejected");
+    f.processing("processed");
+    f.setAttribution([]);
+    expect(await f.client.send(event)).toBe("mismatch");
+    f.setAttribution([
+      { customer_id: "customer", meter_id: "meter", subscription_id: "other" },
+    ]);
+    expect(await f.client.send(event)).toBe("mismatch");
+    expect(f.posts()).toBe(1);
   } finally {
     f.server.stop(true);
   }
