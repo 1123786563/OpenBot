@@ -58,6 +58,7 @@ const reads = {
     deliveries: [],
     available: { slack: false, teams: false, sms: false, push: false },
   },
+  "/api/computers/pilot": { lifecycle: null },
   "/api/computers/fleet": { computers: [], isolation: "per-person" },
   "/api/host-access": {
     grants: [],
