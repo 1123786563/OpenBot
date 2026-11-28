@@ -25,6 +25,7 @@ for attempt in $(seq 1 30); do
     case "${1:-}" in
       "") bun --no-env-file scripts/browser-acceptance/first-batch.mjs ;;
       --first-attachment) bun --no-env-file scripts/browser-acceptance/first-attachment.mjs ;;
+      --ideas-start) bun --no-env-file scripts/browser-acceptance/ideas-start.mjs ;;
       --task-confirmation) bun --no-env-file scripts/browser-acceptance/task-confirmation.mjs ;;
       --group-stop) bun --no-env-file scripts/browser-acceptance/group-stop.mjs ;;
       --website-sign-in) bun --no-env-file scripts/browser-acceptance/website-sign-in.mjs ;;
