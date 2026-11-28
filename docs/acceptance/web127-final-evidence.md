@@ -106,6 +106,12 @@ Firefox ESR 和 Orca 在 Personal 隔离环境中复验了 Tasks、Ideas、Goals
 
 Chromium 和 WebKit 在三种宽度及浅深主题下通过 12 个 Tasks 并发失败场景。任务与审批各显示一个错误，键盘只重试对应请求，恢复后聚焦任务状态筛选器。两种浏览器也验证了任务和例行任务历史的来源链接。Goals 的 Bot 选择器和导航至少相隔 16 CSS 像素。新建表单实测的四个控件均达到 44 × 44 CSS 像素。这些浏览器场景使用隔离模拟 API。真实角色的保存记录见上方例行任务条目。独立评分仍待完成。 [Chromium 并发恢复](/Users/wuyj/.local/state/openbot-spec-127/evidence/tasks-concurrent-themed.XCD3BY/run.json) · [WebKit 并发恢复](/Users/wuyj/.local/state/openbot-spec-127/evidence/tasks-concurrent-webkit-en.1nHRMf/run.json) · [布局与触区](/Users/wuyj/.local/state/openbot-spec-127/evidence/routine-targets.0ljWZC/run.json)
 
+### #191 治理与 #192 Admin 复验
+
+Firefox ESR 和 Orca 在主线构建 `bbbbe63fa` 的隔离 Team 环境验证了 People、Boundaries 和 Audit 的首次读取故障。按 Enter 原位重试后，焦点分别落在 Workspace access、Boundary rules 和 Refresh。另有 102 项治理回归通过。批量审批规则的 10 项定向测试在隔离 PostgreSQL 中验证了提交后丢失响应、同一标识重试和并发首次保存，规则与审计只写入一次。真实角色、真实模型和权限传播待验。 [治理证据索引](/Users/wuyj/.local/state/openbot-spec-127/evidence/web191-acceptance-audit.md) · [Audit 读屏](/Users/wuyj/.local/state/openbot-spec-127/evidence/orca-audit-refresh.lw0dv1)
+
+同一构建的 Admin 概览在 Chromium 与 WebKit 通过 8 个键盘场景，覆盖桌面、窄屏、浅色和深色。搜索无结果时显示示例，Escape 清空，Enter 聚焦并打开 What if。返回后保留查询和结果焦点。另有 109 项 Web 与隔离 PostgreSQL 回归通过，覆盖 Audit 导出范围、Providers 保存失败、Learning 草稿和 Playground 焦点恢复。独立评分待完成。 [搜索场景](/Users/wuyj/.local/state/openbot-spec-127/evidence/admin-search-keyboard.Em4HO3/run.json) · [定向测试](/Users/wuyj/.local/state/openbot-spec-127/evidence/web192-admin-settings-regression.LKR4Wk/results.log)
+
 ## 逐页记录
 
 | ID | 视图与路由 | 模拟身份 | 捕获与具体缺口 | H1–H10 | 满分 |
@@ -150,12 +156,12 @@ Chromium 和 WebKit 在三种宽度及浅深主题下通过 12 个 Tasks 并发�
 | `view-38` | /responsibilities · `/responsibilities` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-39` | Goals view · `/responsibilities?view=goals` | Personal | 4/4 首屏。另验 Bot 选择器的间距与重试焦点。独立评分待验 | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-40` | Activity · `/s/activity` | Personal | 4/4 首屏。另验读屏重试、焦点和三个空态。独立评分待验 | 待 待 待 待 待 待 待 待 待 待 | 40 |
-| `view-41` | Admin home · `/admin/` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
+| `view-41` | Admin home · `/admin/` | Team 管理员 | 4/4 首屏。另验任务词搜索、空结果和返回时的键盘焦点。独立评分待验 | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-42` | Admin approvals · `/admin/approvals` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-43` | Admin approval describe · `/admin/approvals/describe` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-44` | Admin approval guidance · `/admin/approvals/guidance` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
-| `view-45` | Admin audit · `/admin/audit` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
-| `view-46` | Admin boundaries · `/admin/boundaries` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
+| `view-45` | Admin audit · `/admin/audit` | Team 管理员 | 4/4 首屏。另验隔离 Audit 读取失败后的读屏刷新。独立评分待验 | 待 待 待 待 待 待 待 待 待 待 | 40 |
+| `view-46` | Admin boundaries · `/admin/boundaries` | Team 管理员 | 4/4 首屏。另验隔离策略读取失败后的读屏重试。独立评分待验 | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-47` | Boundary detail · `/admin/boundaries/$index` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-48` | New boundary · `/admin/boundaries/new` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-49` | Admin components · `/admin/components/` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
@@ -165,7 +171,7 @@ Chromium 和 WebKit 在三种宽度及浅深主题下通过 12 个 Tasks 并发�
 | `view-53` | New credential · `/admin/credentials/new` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-54` | Identity providers · `/admin/identity-providers` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-55` | Admin learning · `/admin/learning` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
-| `view-56` | People · `/admin/people` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
+| `view-56` | People · `/admin/people` | Team 管理员 | 4/4 首屏。另验 Team 管理员模拟列表重试与焦点恢复。独立评分待验 | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-57` | Permissions · `/admin/permissions` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-58` | Permissions describe · `/admin/permissions/describe` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-59` | Playground · `/admin/playground` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API。有页面异常 | 待 待 待 待 待 待 待 待 待 待 | 40 |
