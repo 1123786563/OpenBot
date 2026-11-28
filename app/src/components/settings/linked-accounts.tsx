@@ -357,11 +357,15 @@ export function LinkedAccountSection({
             <DialogTitle>Link your Slack account</DialogTitle>
           </DialogHeader>
           <DialogBody className="mt-4">
-            {issued && expired ? (
-              <p className="text-muted-foreground text-sm" role="status">
-                This code expired. Close this window and request a new code.
-              </p>
-            ) : issued ? (
+            <p
+              className={expired ? "text-muted-foreground text-sm" : "sr-only"}
+              role="status"
+            >
+              {expired
+                ? "This code expired. Close this window and request a new code."
+                : null}
+            </p>
+            {issued && !expired ? (
               <VStack gap={3} className="text-sm">
                 <p>
                   In Slack, open a direct message with the OpenBot app. Paste
