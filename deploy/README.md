@@ -37,6 +37,26 @@ python3 --version
 
 需要 Python 3.10+、Docker Engine 和 Compose 2.24.4+。不需要在主机安装 Node.js、Bun、PostgreSQL 或 Redis。Docker 组具有主机管理权限，仅给平台维护人员使用。
 
+最后给服务器加 swap。内存用尽时，没有 swap 的机器会直接终止进程；有 swap 时进程先变慢，不会立刻被终止。先查看已有的 swap，下面这条命令有输出就不用再加。
+
+```sh
+swapon --show
+```
+
+没有输出时执行以下命令。它适用于 ext4 和 XFS 根分区，swap 文件会占用同样大小的磁盘。
+
+```sh
+sudo fallocate -l 8G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+echo 'vm.swappiness=10' | sudo tee /etc/sysctl.d/99-openbot-swappiness.conf
+sudo sysctl -p /etc/sysctl.d/99-openbot-swappiness.conf
+```
+
+`vm.swappiness=10` 让系统只在内存紧张时使用 swap。swap 是缓冲，不计入上面的内存要求。
+
 ## 2. 获取仓库并初始化
 
 使用你有权限访问的 OpenBot Git 仓库地址替换下面的地址。

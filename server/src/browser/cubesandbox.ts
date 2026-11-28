@@ -28,6 +28,17 @@ const sandboxSchema = z.object({
 const volumesSchema = z.record(z.string().min(1), z.string().trim().min(1));
 const MOUNT = "/profiles";
 const LABEL = "openbotBrowser";
+/** On each sandbox made to pause when idle. One without it was made before OpenBot asked for that, and Cube destroys
+ * it once an idle window runs out. */
+const PAUSES = "openbotPauses";
+/** How long a sandbox goes without a request before Cube pauses it: the house's idle window for a computer
+ * (`COMPUTER_BROWSER_IDLE_MS`, `COMPUTER_SANDBOX_IDLE_AFTER`). Paused, it holds no CPU or memory, and the next
+ * request resumes it. */
+const IDLE_SECONDS = 30 * 60;
+/** How often OpenBot starts that window again for a sandbox it is still being asked for. */
+const RENEW_EVERY_MS = IDLE_SECONDS * 500;
+
+type Sandbox = z.infer<typeof sandboxSchema>;
 
 export function cubeBrowserVolumes(env: Record<string, string | undefined>) {
   const bindings = env.OPENBOT_CUBE_BROWSER_VOLUMES?.trim();
@@ -109,10 +120,18 @@ export function cubeSandboxBrowsers(
       .digest("hex");
     return { person, volume, logicalId, token };
   };
+  /** Nothing runs in a sandbox Cube has paused or is pausing, and reaching it would wake it. */
+  const asleep = (sandbox?: Sandbox) =>
+    sandbox?.state === "paused" || sandbox?.state === "pausing";
+  const pauses = (sandbox: Sandbox) => sandbox.metadata?.[PAUSES] === "on";
+  /** When OpenBot may next ask Cube to start each sandbox's idle window again. */
+  const renewAt = new Map<string, number>();
+  const refused = (status: number) =>
+    new ProviderError(`CubeSandbox browser API answered ${status}.`);
 
-  async function cube(path: string, body?: unknown): Promise<unknown> {
+  async function call(path: string, body?: unknown): Promise<Response> {
     try {
-      const response = await fetch(api + path, {
+      return await fetch(api + path, {
         ...(body === undefined
           ? {}
           : { method: "POST", body: JSON.stringify(body) }),
@@ -123,10 +142,25 @@ export function cubeSandboxBrowsers(
         redirect: "error",
         signal: AbortSignal.timeout(30_000),
       });
-      if (!response.ok)
-        throw new ProviderError(
-          `CubeSandbox browser API answered ${response.status}.`,
-        );
+    } catch {
+      throw new ProviderError(
+        "The CubeSandbox browser API could not be reached.",
+      );
+    }
+  }
+
+  /** `call` for a request Cube answers without a body: its status. */
+  async function act(path: string, body?: unknown): Promise<number> {
+    const response = await call(path, body);
+    await response.body?.cancel();
+    return response.status;
+  }
+
+  /** `call`, answered with a JSON body. */
+  async function cube(path: string, body?: unknown): Promise<unknown> {
+    const response = await call(path, body);
+    try {
+      if (!response.ok) throw refused(response.status);
       return await response.json();
     } catch (error) {
       if (error instanceof ProviderError) throw error;
@@ -134,6 +168,32 @@ export function cubeSandboxBrowsers(
         "The CubeSandbox browser API could not be reached.",
       );
     }
+  }
+
+  /**
+   * Starts a sandbox's idle window again from now, at most once every half window. Cube counts a request as activity
+   * only where it enters through its own proxy, and the pilot's ingress sits on the node's port mappings: without
+   * this, a browser in use would be paused one window after it was made or resumed. A refusal costs the request
+   * nothing, and is tried again a minute on.
+   * shortcut: a use is not told apart from the state every screen polls, so a browser stays awake while OpenBot is
+   * in view, idle or not; upgrade when a deployment needs idle-but-watched browsers released too.
+   */
+  async function keepAwake(sandbox: Sandbox) {
+    if (!pauses(sandbox)) return;
+    const now = Date.now();
+    if (now < (renewAt.get(sandbox.sandboxID) ?? 0)) return;
+    let next = 60_000;
+    try {
+      if (
+        (await act(`/sandboxes/${sandbox.sandboxID}/timeout`, {
+          timeout: IDLE_SECONDS,
+        })) < 400
+      )
+        next = RENEW_EVERY_MS;
+    } catch (error) {
+      if (!(error instanceof ProviderError)) throw error;
+    }
+    renewAt.set(sandbox.sandboxID, Date.now() + next);
   }
 
   async function find(logicalId: string) {
@@ -199,12 +259,17 @@ export function cubeSandboxBrowsers(
       const { logicalId, token } = bindingFor(seat);
       return options.serialize(logicalId, async () => {
         const sandbox = await find(logicalId);
-        if (!sandbox) return false;
+        // Paused already, or pausing: no browser runs there, and reaching it would wake it.
+        if (!sandbox || asleep(sandbox)) return false;
         const base = dataAddress(address, sandbox.sandboxID);
-        return (
+        const wasRunning =
           (await lifecycle(base, "/computers/stop-all", seat, token))
-            .wasRunning === true
-        );
+            .wasRunning === true;
+        // A sandbox holds its memory while it runs, browsers or not.
+        const status = await act(`/sandboxes/${sandbox.sandboxID}/pause`, {});
+        // Cube refuses one that is pausing already, by its own idle timer or an operator's hand: no less stopped.
+        if (status >= 400 && status !== 409) throw refused(status);
+        return wasRunning;
       });
     },
     async reset(seat) {
@@ -217,6 +282,15 @@ export function cubeSandboxBrowsers(
       const { person, volume, logicalId, token } = bindingFor(seat);
       const base = await options.serialize(logicalId, async () => {
         let sandbox = await find(logicalId);
+        if (sandbox?.state === "paused") {
+          // `connect` resumes it and starts its idle window again. It keeps its ID, and Cube, not the reply, says
+          // whether it is running. Cube makes its node port mappings again, so the ingress must resolve them afresh.
+          await cube(`/sandboxes/${sandbox.sandboxID}/connect`, {
+            timeout: pauses(sandbox) ? IDLE_SECONDS : -1,
+          });
+          renewAt.set(sandbox.sandboxID, Date.now() + RENEW_EVERY_MS);
+          sandbox = await find(logicalId);
+        }
         if (sandbox && sandbox.state !== "running")
           throw new ProviderError(
             "The CubeSandbox browser instance is not running.",
@@ -225,7 +299,7 @@ export function cubeSandboxBrowsers(
           const created = sandboxSchema.safeParse(
             await cube("/sandboxes", {
               templateID,
-              metadata: { [LABEL]: logicalId },
+              metadata: { [LABEL]: logicalId, [PAUSES]: "on" },
               volumeMounts: [{ name: volume, path: MOUNT, readOnly: false }],
               envVars: {
                 COMPUTER_PERSON_ID: person,
@@ -240,13 +314,17 @@ export function cubeSandboxBrowsers(
               secure: true,
               network: { allowPublicTraffic: false },
               restartPolicy: "Never",
-              timeout: -1,
+              // Paused when idle, never killed: the next request resumes it.
+              timeout: IDLE_SECONDS,
+              lifecycle: { onTimeout: "pause", autoResume: true },
             }),
           );
           if (!created.success)
             throw new ProviderError("Invalid CubeSandbox browser instance.");
           sandbox = created.data;
+          renewAt.set(sandbox.sandboxID, Date.now() + RENEW_EVERY_MS);
         }
+        await keepAwake(sandbox);
         const base = dataAddress(address, sandbox.sandboxID);
         if (await ready(base, seat, token)) return base;
 
@@ -275,11 +353,13 @@ export function cubeSandboxBrowsers(
       const { logicalId } = bindingFor(seat);
       try {
         const sandbox = await find(logicalId);
-        const state: ComputerStatus["state"] = sandbox
-          ? sandbox.state === "running"
-            ? "ready"
-            : "starting"
-          : "absent";
+        // Nothing runs in a sandbox Cube has paused or is pausing, and opening it resumes it.
+        const state: ComputerStatus["state"] =
+          !sandbox || asleep(sandbox)
+            ? "absent"
+            : sandbox.state === "running"
+              ? "ready"
+              : "starting";
         return { botId: seat.botId, state };
       } catch (error) {
         if (!(error instanceof ProviderError)) throw error;

@@ -27,6 +27,39 @@ See [CubeSandbox custom template images](https://docs.cubesandbox.com/guide/tuto
 [private port mapping](https://docs.cubesandbox.com/guide/sandbox-to-sandbox),
 and [volume setup](https://docs.cubesandbox.com/guide/volume).
 
+## Idle browsers
+
+OpenBot creates each sandbox so that Cube pauses it after thirty minutes
+without a request, in v0.8.0's `lifecycle` shape, and resumes the same sandbox
+on the next one. A paused sandbox reads as closed, so the page offers to open
+it. Its login state is in its volume and in the memory snapshot Cube keeps.
+Stopping a personal computer closes its browsers and pauses its sandbox.
+
+Cube counts a request as activity only where it enters through Cube's own
+proxy, and the pilot's ingress sits on the node's port mappings. OpenBot
+therefore starts a sandbox's idle window again itself, at most once every
+fifteen minutes, on any request for that sandbox. Every screen polls, so a
+sandbox stays awake while the person keeps OpenBot in view and pauses fifteen
+to thirty minutes after they leave it.
+
+Cube makes a resumed sandbox's node port mappings again, and the port can
+change, so the ingress behind the URL patterns below must resolve them for each
+request, as step 5 above says. A sandbox made before OpenBot paused sandboxes
+is destroyed, not paused, when an idle window runs out, so OpenBot gives it
+none. Replace it, as below, for it to pause when idle.
+
+Pausing writes a memory snapshot for each sandbox, so a compute node needs room
+for one per person. A sandbox resumes on the node that paused it unless its
+template uses a shared backend (`--backend s3` or `jfs`). See
+[CubeSandbox sandbox lifecycle](https://docs.cubesandbox.com/guide/lifecycle).
+
+Cube v0.8.0's PVM guest kernel can panic while a sandbox resumes, and on v0.8.0
+the sandbox then stays stuck until its shim is stopped on the node
+([CubeSandbox #2385](https://github.com/TencentCloud/CubeSandbox/issues/2385)).
+The fix for the stuck state is on master and in no release. Before anyone is
+enrolled, pause and resume a spare sandbox on the deployment many times over,
+and keep that recovery within reach.
+
 ## Enroll test users
 
 Obtain consent from each test user before adding their OpenBot user ID to the
@@ -62,6 +95,13 @@ the legacy browser backend.
 4. Reopen from the same OpenBot entries. Confirm Cube created a different
    sandbox ID, the OpenBot browser ID stayed the same, and each profile
    retained its own login state.
+5. Stop the personal computer from its controls and confirm Cube lists the
+   sandbox as paused and OpenBot offers to open it. Open it and confirm it is
+   the same sandbox ID, resumed, with its logins intact, and that the ingress
+   follows the node mappings Cube made again for it. Leave another browser open
+   and using it past thirty minutes and confirm Cube never pauses it. Then
+   close every OpenBot page and confirm Cube pauses that sandbox within thirty
+   minutes.
 
 ## Verify the target deployment
 
