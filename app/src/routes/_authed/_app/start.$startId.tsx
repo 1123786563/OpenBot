@@ -269,22 +269,24 @@ function StartHandoff({ owner, startId }: { owner: string; startId: string }) {
                     : "Your original stays saved here."
                 }
               >
-                {failure.matches?.length ? (
-                  <Text
-                    as="p"
-                    className="[overflow-wrap:anywhere]"
-                    color="secondary"
-                    size="sm"
-                  >
-                    Matching Bots: {failure.matches.join(", ")}
-                  </Text>
-                ) : null}
-                {draft.attachments.length > 0 ? (
-                  <Text as="p" color="secondary" size="sm">
-                    You can add the saved files to the new conversation before
-                    sending.
-                  </Text>
-                ) : null}
+                <Stack gap={2}>
+                  {failure.matches?.length ? (
+                    <Text
+                      as="p"
+                      className="[overflow-wrap:anywhere]"
+                      color="secondary"
+                      size="sm"
+                    >
+                      Matching Bots: {failure.matches.join(", ")}
+                    </Text>
+                  ) : null}
+                  {draft.attachments.length > 0 ? (
+                    <Text as="p" color="secondary" size="sm">
+                      You can add the saved files to the new conversation before
+                      sending.
+                    </Text>
+                  ) : null}
+                </Stack>
                 <Stack direction="horizontal" gap={2} wrap="wrap">
                   {draft.text ? (
                     <FirstMessageDraftCopy
@@ -404,7 +406,7 @@ function StartHandoff({ owner, startId }: { owner: string; startId: string }) {
           collapsible={false}
           status="warning"
           title="This conversation start is unavailable."
-          description="To resume this message, open the link in the browser where you sent it."
+          description="To recover a saved draft, open this link in the browser and account where you started it. If the draft is gone, start a new conversation."
         >
           <Link
             className={buttonVariants({

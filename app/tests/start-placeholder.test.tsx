@@ -416,6 +416,9 @@ test("a handoff link with no saved start explains how to open a new Conversation
     await view.findByText("This conversation start is unavailable."),
   ).toBeTruthy();
   expect(
+    view.getByText(/browser and account where you started it/),
+  ).toBeTruthy();
+  expect(
     view.getByRole("link", { name: "New conversation" }).getAttribute("href"),
   ).toBe("/channel/new");
   expect(view.router.state.location.pathname).toBe("/start/missing");

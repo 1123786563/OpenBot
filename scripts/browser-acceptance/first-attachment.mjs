@@ -186,6 +186,28 @@ try {
         assert.equal(reads, 2);
         assert.equal(create, undefined);
         assert.equal(upload, undefined);
+        const filename = page.getByText("brief.txt", { exact: true }).last();
+        const filenameElement = await filename.elementHandle();
+        await page.waitForFunction((element) => {
+          if (!element?.isConnected) return false;
+          const filenameBounds = element.getBoundingClientRect();
+          for (
+            let parent = element.parentElement;
+            parent;
+            parent = parent.parentElement
+          ) {
+            const { overflowY } = getComputedStyle(parent);
+            if (!["hidden", "clip", "auto", "scroll"].includes(overflowY))
+              continue;
+            const bounds = parent.getBoundingClientRect();
+            if (
+              filenameBounds.top < bounds.top - 1 ||
+              filenameBounds.bottom > bounds.bottom + 1
+            )
+              return false;
+          }
+          return filenameBounds.height > 0;
+        }, filenameElement);
         await page.screenshot({ path: join(EVIDENCE_DIR, `${name}.png`) });
         await page
           .getByRole("button", { name: "Send message", exact: true })
