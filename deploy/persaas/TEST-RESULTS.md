@@ -58,3 +58,9 @@
 ## Casdoor 登录按钮文案 — 2026-11-28
 
 登录页提供者名称由 Okta 改为 Casdoor，中英文模板均使用新名称；内部 OAuth provider ID 保持 `okta`，现有回调和连接配置继续使用。40 项登录客户端及登录页测试通过，Vite 生产构建通过。新前端发布到 B 的 `openbot-server:persaas-casdoor-20261128`（在原后端镜像上加入构建的 dist，保留旧资源供已打开页面使用），Compose 镜像引用同步更新；回滚配置位于 B `/opt/persaas/backups/apps-before-casdoor-label.yml`。公网健康接口 200、新版 client 资源包含 Casdoor 名称、OAuth 仍跳转 `casdoor.persaas.cn`，均已验证。
+
+## Infisical 管理范围收窄 — 2026-11-28
+
+按用户最新要求，Infrastructure 仅管理容器实际引用的 env：16 个项目、27 份文件，读回一致、差异为 0、非 env 项为 0。曾上传的 Compose、证书、其他配置和管理员凭据目录已清理；本机原配置及 root 专用回滚备份保留。旧归档入口已改为 env-only，详细流程见 INFISICAL-MIDDLEWARE.md。四个运行身份访问 Infrastructure 均为 403。
+
+Bifrost JSON 已删除 providers/auth_config，setup token 从 env 注入，容器重新创建后控制台 200、匿名管理接口 401、setup token 存在。既有模型和管理员数据库保留。本轮此前真实推理复验返回 400，未将其标记为通过。容器环境迁移前后完整 Compose 展开结果一致，A 的 27 个中间件容器保持运行。

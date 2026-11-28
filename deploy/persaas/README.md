@@ -33,11 +33,11 @@ bash sync-config.sh
 docker compose -f data.yml up -d --force-recreate flexprice temporal
 ```
 
-四个机器身份只有项目读取权限，但可读取该项目内其他目录；不要把无关项目的密钥放入此项目。引导文件 `infisical-*.env` 包含机器身份凭据，仅 root 可读。Infisical 自身的数据库、Redis DB0、加密密钥保存在 1Panel 应用配置中，避免启动循环依赖。旧 `server.env` 等文件仅为恢复快照，修改它们不会更新正在运行的应用。中间件管理员凭据与恢复归档位于独立的 **Persaas Infrastructure → prod** 项目，运行身份没有该项目权限；其运行配置仍由 1Panel 管理。
+四个机器身份只有项目读取权限，但可读取该项目内其他目录；不要把无关项目的密钥放入此项目。引导文件 `infisical-*.env` 包含机器身份凭据，仅 root 可读。Infisical 自身的数据库、Redis DB0、加密密钥保存在 1Panel 应用配置中，避免启动循环依赖。旧 `server.env` 等文件仅为恢复快照，修改它们不会更新正在运行的应用。中间件容器 env 文件位于独立的 **Persaas Infrastructure → prod** 项目，运行身份没有该项目权限；Compose、证书等文件继续由服务器和 1Panel 管理。
 
 新增 Bifrost、Opik、Lago、MySQL 以及 Flexprice 控制台的入口、配置归档和维护步骤见 [中间件指南](extensions/README.md)。
 
-全量中间件配置的目录、上传、差异检查和下发流程见 [Infisical 中间件管理](INFISICAL-MIDDLEWARE.md)。本轮全量迁移尚待有效的 Infisical 管理员登录信息，不能视为已经同步完成。
+全量中间件配置的目录、上传、差异检查和下发流程见 [Infisical 中间件管理](INFISICAL-MIDDLEWARE.md)。已按用户确认收窄为 env 文件：16 个项目、27 份 env 已同步，非 env 项已清理。
 
 ## Redis 当前方案
 

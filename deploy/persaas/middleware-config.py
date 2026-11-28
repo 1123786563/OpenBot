@@ -78,143 +78,150 @@ class Vault:
             raise RuntimeError('Vault readback mismatch: ' + folder)
 
 
-def file_key(path, compose):
-    if path == compose:
-        return 'COMPOSE_YAML'
-    if path == compose.parent / '.env':
-        return 'PANEL_ENV_FILE'
-    name = re.sub('[^A-Za-z0-9]', '_', path.name).upper()
-    return 'CONFIG_' + name + '_' + hashlib.sha256(str(path).encode()).hexdigest()[:10].upper()
-
-
-def inventory():
+def projects():
     ids = run('docker', 'ps', '-q').split()
-    containers = json.loads(run('docker', 'inspect', *ids)) if ids else []
-    groups = {}
-    for container in containers:
-        labels = container['Config'].get('Labels') or {}
-        files = labels.get('com.docker.compose.project.config_files', '').split(',')
-        if len(files) != 1 or not files[0]:
-            raise RuntimeError('Container has no single Compose source: ' + container['Name'])
-        compose = Path(files[0]).resolve()
-        if not str(compose).startswith(('/opt/1panel/apps/', '/opt/persaas/')):
-            raise RuntimeError('Unexpected Compose source')
-        folder = labels['com.docker.compose.project']
-        if folder == 'persaas-data':
-            folder = 'data-services'
-        if folder == 'redis-cluster-master':
-            folder = 'redis'
-        group = groups.setdefault(folder, {'compose': compose, 'paths': {compose}, 'containers': []})
-        if group['compose'] != compose:
-            raise RuntimeError('Duplicate project name')
-        group['containers'].append(container)
-        dotenv = compose.parent / '.env'
-        if dotenv.is_file():
-            group['paths'].add(dotenv)
-        for mount in container['Mounts']:
-            source = Path(mount['Source'])
-            if not str(source).startswith(('/opt/1panel/', '/opt/persaas/')):
-                continue
-            if source.is_file():
-                group['paths'].add(source)
-            elif source.is_dir() and any(part in source.name.lower() for part in ['conf', 'config', 'cert', 'ssl']):
-                group['paths'].update(p for p in source.rglob('*') if p.is_file() and not p.is_symlink())
-    for group in groups.values():
-        compose = group['compose']
-        definition = json.loads(run('docker', 'compose', '-f', str(compose), 'config', '--no-env-resolution', '--format', 'json', cwd=compose.parent))
-        for service in definition['services'].values():
-            for entry in service.get('env_file', []):
-                path = Path(entry['path'] if isinstance(entry, dict) else entry)
-                # Runtime folders own these generated exports; keep one configuration authority.
-                if path.parent != ROOT / 'runtime':
-                    group['paths'].add(path)
-    # Website configuration stays owned by 1Panel; include its actual proxy and TLS files.
-    if 'openresty' in groups:
-        for pattern in ['*/proxy/*.conf', '*/ssl/*.pem', '*/ssl/*.key', '*/ssl/*.crt']:
-            groups['openresty']['paths'].update(Path('/opt/1panel/1panel/www/sites').glob(pattern))
-    return groups
+    result = {}
+    for item in json.loads(run('docker', 'inspect', *ids)) if ids else []:
+        labels = item['Config'].get('Labels') or {}
+        sources = labels.get('com.docker.compose.project.config_files', '').split(',')
+        if len(sources) != 1 or not sources[0]:
+            raise RuntimeError('Expected one Compose file per running project')
+        path = Path(sources[0]).resolve()
+        if not str(path).startswith(('/opt/1panel/apps/', '/opt/persaas/')):
+            raise RuntimeError('Unexpected Compose path')
+        name = labels['com.docker.compose.project']
+        name = {'persaas-data': 'data-services', 'redis-cluster-master': 'redis'}.get(name, name)
+        result[name] = path
+    return result
 
 
-def values_for(group):
-    compose = group['compose']
-    values, manifest = {}, {}
-    for path in sorted(group['paths']):
-        if path.is_symlink() or path.stat().st_size > 500000:
-            raise RuntimeError('Unsupported configuration file: ' + str(path))
-        stat = path.stat()
-        key = file_key(path, compose)
-        values[key] = path.read_text()
-        manifest[key] = {'path': str(path), 'mode': stat.st_mode & 0o777, 'uid': stat.st_uid, 'gid': stat.st_gid}
-    values['FILES_MANIFEST_JSON'] = json.dumps(manifest, sort_keys=True)
-    # Effective environment is evidence, not another editable configuration source.
-    rendered = json.loads(run('docker', 'compose', '-f', str(compose), 'config', '--format', 'json', cwd=compose.parent))
-    values['EFFECTIVE_ENVIRONMENT_JSON'] = json.dumps({name: config.get('environment', {}) for name, config in rendered['services'].items()}, sort_keys=True)
-    return values, manifest
+def definition(compose, unresolved=False):
+    args = ['docker', 'compose', '--profile', '*', '-f', str(compose), 'config', '--format', 'json']
+    if unresolved:
+        args.append('--no-env-resolution')
+    return json.loads(run(*args, cwd=compose.parent))
 
 
-def apply(group, values, write=False):
-    _, local = values_for(group)
-    manifest = json.loads(values['FILES_MANIFEST_JSON'])
-    if manifest != local:
-        raise RuntimeError('Configuration paths or ownership changed; inventory and push again before applying')
-    changes = [(Path(meta['path']), values[key], meta) for key, meta in manifest.items() if Path(meta['path']).read_text() != values[key]]
+def env_files(compose):
+    paths = set()
+    for service in definition(compose, True)['services'].values():
+        for item in service.get('env_file', []):
+            path = Path(item['path'] if isinstance(item, dict) else item)
+            # These exports are owned by the existing Runtime folders.
+            if path.parent != ROOT / 'runtime':
+                paths.add(path)
+    return {('ENV_' + re.sub('[^A-Za-z0-9]', '_', path.name).upper() + '_' + hashlib.sha256(str(path).encode()).hexdigest()[:10].upper()): path for path in sorted(paths)}
+
+
+def env_text(text):
+    # Outside a dotenv value, leading/trailing empty lines carry no configuration.
+    return text.strip()
+
+
+def materialize(compose):
+    import yaml
+    original = compose.read_text()
+    raw = yaml.safe_load(original)
+    before = definition(compose)
+    changes = False
+    for name, service in raw['services'].items():
+        values = before['services'].get(name, {}).get('environment', {})
+        if not values or not service.get('environment'):
+            continue
+        # Existing Runtime export files stay authoritative.
+        existing = service.get('env_file', [])
+        if any('/runtime/' in str(item) or str(item).startswith('runtime/') for item in (existing if isinstance(existing, list) else [existing])):
+            continue
+        target = compose.parent / ('.container-' + name + '.env')
+        text = ''.join(key + '=' + json.dumps(str(value).replace('$', '$$'), ensure_ascii=False) + '\n' for key, value in sorted(values.items()) if value is not None)
+        if any(value is None for value in values.values()):
+            raise RuntimeError('Unresolved container environment variable')
+        atomic(target, text)
+        service.pop('environment', None)
+        service['env_file'] = [str(target)]
+        changes = True
+    if not changes:
+        return
+    backup = ROOT / 'backups' / ('env-materialize-' + str(time.time_ns()))
+    backup.mkdir(mode=0o700, parents=True)
+    atomic(backup / 'compose.yml', original)
+    stat = compose.stat()
+    try:
+        atomic(compose, yaml.safe_dump(raw, sort_keys=False), stat.st_mode & 0o777, stat.st_uid, stat.st_gid)
+        after = definition(compose)
+        if before != after:
+            raise RuntimeError('Materialization changed rendered Compose configuration')
+    except Exception:
+        atomic(compose, original, stat.st_mode & 0o777, stat.st_uid, stat.st_gid)
+        raise
+
+
+def apply_env(compose, values, write=False):
+    files = env_files(compose)
+    if set(values) != set(files):
+        raise RuntimeError('Vault must contain exactly the discovered .env files')
+    changes = [(path, values[key]) for key, path in files.items() if env_text(path.read_text()) != values[key]]
     if not write or not changes:
         return len(changes)
-    backup = ROOT / 'backups' / ('vault-' + str(time.time_ns()))
+    backup = ROOT / 'backups' / ('env-apply-' + str(time.time_ns()))
     backup.mkdir(mode=0o700, parents=True)
-    for path, _, _ in changes:
-        target = backup / path.relative_to('/')
-        target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        shutil.copy2(path, target)
+    originals = []
+    for path, value in changes:
+        if path.is_symlink() or not isinstance(value, str):
+            raise RuntimeError('Invalid env file')
+        stat = path.stat()
+        old = path.read_text()
+        atomic(backup / path.name, old)
+        originals.append((path, old, stat))
     try:
-        for path, value, meta in changes:
-            atomic(path, value, meta['mode'], meta['uid'], meta['gid'])
-        compose = group['compose']
-        run('docker', 'compose', '-f', str(compose), 'config', '--quiet', cwd=compose.parent)
-        if any(c['Config']['Labels'].get('com.docker.compose.project') == 'openresty' for c in group['containers']):
-            run('docker', 'exec', group['containers'][0]['Id'], 'openresty', '-t')
+        for path, value in changes:
+            stat = path.stat()
+            atomic(path, value + '\n', stat.st_mode & 0o777, stat.st_uid, stat.st_gid)
+        definition(compose)
     except Exception:
-        for path, _, meta in changes:
-            atomic(path, (backup / path.relative_to('/')).read_text(), meta['mode'], meta['uid'], meta['gid'])
+        for path, old, stat in originals:
+            atomic(path, old, stat.st_mode & 0o777, stat.st_uid, stat.st_gid)
         raise
     return len(changes)
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['push', 'check', 'apply'])
-    parser.add_argument('--project', help='One Compose project / Infrastructure folder')
-    parser.add_argument('--restart', action='store_true', help='Recreate the selected project after applying')
+    parser = argparse.ArgumentParser(description='Manage only middleware .env files in Infisical')
+    parser.add_argument('action', choices=['materialize', 'push', 'check', 'apply'])
+    parser.add_argument('--project')
+    parser.add_argument('--restart', action='store_true')
     args = parser.parse_args()
     if args.restart and (args.action != 'apply' or not args.project):
         parser.error('--restart requires apply --project NAME')
-    vault = Vault()
-    groups = inventory()
+    groups = projects()
     if args.project:
         groups = {args.project: groups[args.project]}
+    vault = None if args.action == 'materialize' else Vault()
     report = []
-    for folder, group in sorted(groups.items()):
+    for folder, compose in sorted(groups.items()):
+        if args.action == 'materialize':
+            materialize(compose)
+            print(folder + ': container environment preserved')
+            continue
+        files = env_files(compose)
         if args.action == 'push':
-            values, manifest = values_for(group)
+            values = {key: env_text(path.read_text()) for key, path in files.items()}
             vault.write(folder, values)
-            count = len(manifest)
-            print(folder + ': uploaded and readback verified ' + str(count) + ' files')
+            count = len(files)
+            print(folder + ': verified ' + str(count) + ' env files')
         else:
-            values = vault.read(folder)
-            count = apply(group, values, args.action == 'apply')
-            print(folder + ': ' + str(count) + ' changed files')
+            count = apply_env(compose, vault.read(folder), args.action == 'apply')
+            print(folder + ': ' + str(count) + ' changed env files')
             if args.restart:
-                compose = group['compose']
                 run('docker', 'compose', '-f', str(compose), 'up', '-d', '--force-recreate', cwd=compose.parent)
-                print(folder + ': recreated; run middleware acceptance before continuing')
-        report.append({'project': folder, 'fileCount' if args.action == 'push' else 'changedFiles': count})
-    atomic(ROOT / 'middleware-config-report.json', json.dumps({'action': args.action, 'projects': report, 'time': time.time()}, indent=2))
+        report.append({'project': folder, 'count': count})
+    if vault:
+        atomic(ROOT / 'middleware-config-report.json', json.dumps({'action': args.action, 'projects': report, 'time': time.time()}, indent=2))
 
 
 if __name__ == '__main__':
     try:
         main()
     except Exception as error:
-        # HTTP bodies, Compose stderr and file contents can contain credentials.
-        print('Middleware configuration operation failed (' + type(error).__name__ + '). No secret values printed.', flush=True)
+        print('Environment operation failed (' + type(error).__name__ + '); no secret values printed.', flush=True)
         raise SystemExit(1)

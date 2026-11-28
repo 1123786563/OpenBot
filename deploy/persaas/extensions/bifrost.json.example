@@ -1,0 +1,28 @@
+{
+  "$schema": "https://www.getbifrost.ai/schema",
+  "setup_token": "env.BIFROST_SETUP_TOKEN",
+  "config_store": {
+    "enabled": true,
+    "type": "postgres",
+    "config": {
+      "host": "env.BIFROST_DB_HOST",
+      "port": "env.BIFROST_DB_PORT",
+      "user": "env.BIFROST_DB_USER",
+      "password": "env.BIFROST_DB_PASSWORD",
+      "db_name": "env.BIFROST_DB_NAME",
+      "ssl_mode": "env.BIFROST_DB_SSL_MODE"
+    }
+  },
+  "logs_store": {
+    "enabled": true,
+    "type": "postgres",
+    "config": {
+      "host": "env.BIFROST_DB_HOST",
+      "port": "env.BIFROST_DB_PORT",
+      "user": "env.BIFROST_DB_USER",
+      "password": "env.BIFROST_DB_PASSWORD",
+      "db_name": "env.BIFROST_DB_NAME",
+      "ssl_mode": "env.BIFROST_DB_SSL_MODE"
+    }
+  }
+}

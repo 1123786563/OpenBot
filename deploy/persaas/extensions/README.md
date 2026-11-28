@@ -16,7 +16,7 @@ Flexprice 控制台已接入 `https://flexprice.persaas.cn/`，HTTP 自动跳转
 
 该域名已通过 1Panel 网站 API 创建为正式反向代理网站（网站 ID 54），状态为 Running。在 **网站 → flexprice.persaas.cn → 配置** 中管理反向代理和 HTTPS：上游为 `http://127.0.0.1:18085`，HTTPS 已导入现有证书并启用 HTTP 跳转。WAF 域名登记由面板生成。旧的手动 vhost 模板和 WAF 登记脚本已删除；不要在面板外创建同名网站。`archive-panel-config.py` 会先核对面板网站记录、运行状态及证书关联，再归档实际配置。证书续期仍由上述定时器执行。
 
-Infisical 的 **Persaas Infrastructure → prod → /flexprice-admin** 已保存 `PANEL_WEBSITE_JSON`、`CONSOLE_PUBLIC_URL`、`HTTPS_VHOST_CONFIG`、`HTTPS_PROXY_CONFIG`，登录凭据仍为原 `ADMIN_EMAIL`、`ADMIN_PASSWORD`。新配置、证书及 WAF 映射已纳入备份覆盖。本轮归档 `/opt/persaas/backups/postgres-20261128T022943Z.tar.gz`，SHA-256 为 `dae2ef31fddd5d013dec3298aa52caa4595aac9e32dccf22425789a4a4c8c7c3`；本轮未重新恢复数据库或异机复制该新归档。
+Infisical 现在仅保存容器实际引用的 env 文件；不再保存网站配置、证书或管理员凭据目录。维护流程见 [环境变量管理](../INFISICAL-MIDDLEWARE.md)。此前配置归档的历史备份仍保留在服务器 root 专用目录。
 
 ## 在 1Panel 中管理
 
@@ -27,7 +27,7 @@ A 的 **应用商店 → 已安装** 可管理 `bifrost`、`opik`、`lago`、`my
 3. 检查服务后，在 A 运行 `python3 /opt/persaas/archive-panel-config.py`，将最新 1Panel 配置归档到 Infisical 的 Persaas Infrastructure 项目。
 4. 运行 `bash /opt/persaas/check.sh data`，再运行 `python3 /opt/persaas/acceptance-middleware.py`。
 
-Infisical **Persaas Infrastructure → prod** 下的 `/bifrost`、`/opik`、`/lago`、`/mysql` 保存管理员凭据、完整运行环境 JSON、1Panel `.env` 和 Compose；`/openobserve` 保存日志服务管理凭据，`/flexprice-admin` 保存控制台凭据与版本。四个运行身份均被验证无法读取此项目（403），只能读取 Runtime 项目。这些是恢复归档，1Panel 应用目前仍读取本机配置；修改归档不会自动更新容器。OpenBot、Worker 的启动配置及 Flexprice、Temporal 的配置同步方法见上级 [README.md](../README.md)。
+Infisical **Persaas Infrastructure → prod** 保存中间件 env 文件，四个应用运行身份不能读取。OpenBot、Worker、Flexprice、Temporal 的环境变量继续由 Runtime 项目管理。保存后按上述环境变量管理流程下发和重启。
 
 ## 共享资源与隔离
 

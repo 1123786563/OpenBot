@@ -1,67 +1,48 @@
-# 集中管理中间件配置
+# 仅管理容器环境变量
 
-在 A（129.28.39.52）以 root 运行 `middleware-config.py`。配置保存在 **Persaas Infrastructure → prod**，沿用现有项目隔离：OpenBot 和 Worker 的运行身份不能读取基础设施管理凭据。
+2026-11-28 已在 A（129.28.39.52）完成：16 个运行项目，共 27 份容器实际引用的 env 文件，已写入 **Persaas Infrastructure → prod** 并逐项读回一致。差异检查均为 0。Compose、证书、配置文件和管理员凭据目录已从此次集中配置中移除，服务器原文件保留。
 
-## 当前迁移状态
+OpenBot、Worker、Flexprice 和 Temporal 继续使用 **Persaas Runtime → prod** 中原有目录。Flexprice 的 `FLEXPRICE_DEPLOYMENT_MODE`、`GOMEMLIMIT` 也已补入 Runtime。不要把生成的 `runtime/*.env` 再作为第二份可编辑来源上传。
 
-同步工具已上传到 A；本轮写入尚未完成。Infisical 对服务器现存管理员凭据返回 `400 Invalid credentials`，需要当前有效的管理员密码。不要将“工具已安装”视为“全部配置已同步”。
+## 在 Infisical 中修改
 
-## 配置范围
+Infrastructure 的目录对应 Compose 项目名，例如 `/bifrost`、`/casdoor`、`/mysql`、`/redis`、`/opik`、`/lago`、`/kafka`、`/persaas-kafka`、`/rustfs`。每个 `ENV_<文件名>_<路径摘要>` 键保存一份 env 文件的文本，直接编辑其中的 `NAME=value`。没有容器 env_file 的项目目录可以为空。
 
-工具按运行容器的 Compose 标签发现项目，采集实际 Compose 文件、项目 `.env`、引用的 `env_file`、挂载的文本配置和证书。包括 PostgreSQL/pgvector、MySQL、ClickHouse、Redis、两套 Kafka、RustFS、Casdoor、Bifrost、Opik（含 ZooKeeper）、Lago、OpenObserve、Infisical、Flexprice/Temporal 和 OpenResty。DBX 如仍在运行也会登记。只采集配置，不采集数据库目录、对象和日志数据。
+容器环境已整理到各应用原目录的 `.container-<服务名>.env`，Compose 通过 `env_file` 读取；整理前后完整的 Compose 展开结果比较一致。1Panel 的项目 `.env` 仍保留给面板参数使用，但不会因“默认存在”就上传，只有被服务明确声明为 env_file 的文件才纳入管理。
 
-| Infisical 键 | 用途 |
-| --- | --- |
-| `COMPOSE_YAML` | 原始 Compose，可编辑环境变量和服务参数 |
-| `PANEL_ENV_FILE` | 原始 1Panel `.env`，可编辑面板变量 |
-| `CONFIG_<文件名>_<路径摘要>` | 挂载配置、其他 env_file 或证书的原始内容，可编辑 |
-| `FILES_MANIFEST_JSON` | 键对应的路径、属主和权限；不要修改 |
-| `EFFECTIVE_ENVIRONMENT_JSON` | Compose 展开后的环境变量证据；只供核对，修改不会下发 |
+应用运行身份依然不能读取 Infrastructure（四个身份实测 403）。本机 root 引导凭据保留在 `/opt/persaas/credentials.json`；Infisical 自身及其数据库、Redis 的 env 文件必须保留本地副本，保证停机后可恢复。
 
-`data-services` 对应 `/opt/persaas/data.yml`。Flexprice 和 Temporal 的实际环境变量继续以 **Persaas Runtime/prod → /flexprice、/temporal** 为唯一来源；生成的 `runtime/*.env` 不作为另一份可编辑配置上传。它们仍使用 `sync-config.sh` 导出。OpenBot、Worker 继续启动时读取 Runtime。
+## 上传、检查和下发
 
-## 初次登记或面板调整后上传
+在 A 以 root 执行：
 
 ```sh
+# 将服务器当前 env 内容更新到 Infisical，随后读回核对
 python3 /opt/persaas/middleware-config.py push
+# 只比较，不写入、不重启
 python3 /opt/persaas/middleware-config.py check
-```
-
-`push` 会用服务器当前文件更新 Infisical，并逐项读回比较。只有要以本机配置覆盖集中配置时才执行。`check` 只读取并报告差异文件数量，不输出配置值。项目目录名沿用 Compose 项目名（例如 `bifrost`、`opik`、`redis`）；以首次成功上传的报告为准。
-
-## 从 Infisical 下发
-
-1. 在 Infisical 修改源配置键，不修改只读环境摘要或文件清单。
-2. 检查差异，再下发指定项目：
-
-```sh
-python3 /opt/persaas/middleware-config.py check --project bifrost
+# 下发一个项目的 env 内容
 python3 /opt/persaas/middleware-config.py apply --project bifrost
-```
-
-3. 需要让容器重新读取配置时：
-
-```sh
+# 下发并重新创建指定项目的容器
 python3 /opt/persaas/middleware-config.py apply --project bifrost --restart
-python3 /opt/persaas/acceptance-middleware.py
 ```
 
-`apply` 先备份到 `/opt/persaas/backups/vault-<时间>/`，保留文件属主和权限，再执行 Compose 校验；OpenResty 另执行语法检查。校验失败时恢复本次改写的文件。重复下发相同配置不写文件。`--restart` 只允许指定一个项目，不执行全平台批量重建；重建或应用层健康失败需使用备份回滚并再次验收，工具不声称自动恢复业务健康。
+`push` 以本机内容为准，会覆盖 Infisical 中同名 env 项；从 Infisical 下发修改时使用 `apply`。保存到 Infisical 不会自动热更新容器。`apply` 先备份到 `/opt/persaas/backups/env-apply-<时间>/`，保留属主和权限，并执行 Compose 校验；校验失败恢复本次写入的文件。重建后需单独检查服务健康，工具不自动回滚应用层故障。
 
-1Panel 继续使用原来的 Compose 和文件路径，不增加第二套容器。面板中若修改了参数，应先验收，再执行 `push --project NAME` 更新 Infisical。集中配置保存后不会自动热更新容器。
+未来新增的 Compose 若还内联环境变量，可先执行 `materialize --project NAME`，把当前环境转为 env_file；此命令需要服务器已安装的 PyYAML，只在完整 Compose 展开结果不变时保存修改。它不重启容器。不要把管理员或模型配置重新写入 Bifrost JSON。
 
-## 引导与恢复
+旧入口 `archive-panel-config.py` 已改为仅调用 env 上传，不会重新归档 Compose、证书或 JSON 配置。
 
-Infisical 自身、支撑它的 PostgreSQL 和 Redis 必须保留可用的本机配置，不能要求它们启动前先访问 Infisical。集中管理保留这些 root 专用恢复副本。数据库的环境变量密码是部署参数，修改它不会自动修改已初始化数据库中的账号密码；轮换时需同步数据库账号和调用方。
+## Bifrost
 
-工具使用 A 的 `/opt/persaas/credentials.json` 中现有管理员凭据，不创建新的机器身份或扩大已有应用身份权限。日志只报告项目名和数量。证书续期及 1Panel 网站操作仍由现有机制执行，完成后需要上传更新；不得以旧归档覆盖刚续期的证书。
+`bifrost.json` 已移除 `providers` 和 `auth_config`，保留数据库连接等必要设置，通过 `env.BIFROST_SETUP_TOKEN` 引用 setup token。实际 token 在 `.container-bifrost.env`，其内容已同步到 Infrastructure 的 `/bifrost`。
 
-## 本地验证
+模型和管理员由 Bifrost 自身的控制台、数据库维护；此次没有清空既有数据库。容器已重新创建，确认 setup token 存在、控制台返回 200、匿名管理 API 返回 401。之前业务复验中真实推理请求返回 400，不属于 env 同步通过的结论，也未声称已修复。
 
-在仓库根目录执行（需要 Docker Compose）：
+## 验证
 
 ```sh
 python3 deploy/persaas/tests/test_middleware_config.py
 ```
 
-验证无变更不写入、篡改路径被拒绝、无效 Compose 自动恢复，以及有效修改下发和重复执行。
+需要 Docker Compose。覆盖只采集实际引用的 env、拒绝非 env 项、无效 dotenv 恢复，以及有效修改重复下发。生产环境已核对 16 个项目、27 份 env、0 个非 env 项；27 个中间件容器保持运行。
