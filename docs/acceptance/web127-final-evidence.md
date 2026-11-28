@@ -94,6 +94,9 @@ Chromium 和 WebKit 各验证了首次使用的进度保存、完成保存与预
 
 使用构建 `9f72e8f5f` 的隔离 API，按 Personal 和 Team 的实际路由要求启用模拟 Arcade 或 Composio。四个目录入口各在桌面、窄屏及浅深两套主题组合复验，16 个样本均进入预期目录。修正后的全量走查仍有 360 个页面样本和 63 个书签样本，未检测到页面异常、文档级横向溢出或未实现的模拟端点。此轮证据覆盖路由和首屏。真实供应商授权和完整任务仍待验。目录读屏补测见下方。 [全量记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/full-broker-corrected.hcLqq1/run.json) · [目录采集修正 PR #261](https://github.com/1123786563/OpenBot/pull/261)
 
+
+- #187 在主线 `f33594577` 上用 Chromium headless shell 完整复跑设备和凭据浏览器套件。9 项通过，共 280 条断言和 300 张截图。范围包括两种部署版本及浅深主题的文字对比度与触区、403、读取失败重试、Recorder 与 Computer 键盘操作、Credentials、This computer 和结果未确认对话框。完整版 Chromium 的本机进程提前结束，改用项目已有的 headless shell 选项后通过。另有 89 项页面与会话接续测试，以及 28 项 Recorder PostgreSQL 测试通过。真实设备、原生桌面窗口和逐页独立评分仍待验。 [完整浏览器日志](/Users/wuyj/.local/state/openbot-spec-127/evidence/web187-device-full.X94xdN/results.log) · [界面与接续测试](/Users/wuyj/.local/state/openbot-spec-127/evidence/web187-device-main.T6xVBP/results.log) · [Recorder 测试](/Users/wuyj/.local/state/openbot-spec-127/evidence/web187-device-full.X94xdN/recorder-postgres.log)
+
 ### #188 Memory 与 #190 供应商目录复验
 
 在主线构建 `bbbbe63fa` 上，Memory 的模拟 403 隐藏新增入口。权限恢复后，键盘重试聚焦 Your memories，搜索与状态筛选可同时生效。Chromium 和 WebKit 共通过 12 个场景，覆盖三种宽度与浅深主题。另用 Orca 复验模拟 503 的重试焦点。Web 和隔离 PostgreSQL 定向回归 139 项通过，3 项自托管 Hindsight 测试跳过。 [权限与筛选场景](/Users/wuyj/.local/state/openbot-spec-127/evidence/memory-permission-browser.s3Ylzs/run.json) · [读屏](/Users/wuyj/.local/state/openbot-spec-127/evidence/orca-memory-recovery.3qUf8a) · [定向回归](/Users/wuyj/.local/state/openbot-spec-127/evidence/web188-current-regression.c8nOgF/results.log)
@@ -126,6 +129,23 @@ Firefox ESR 和 Orca 在主线构建 `bbbbe63fa` 的隔离 Team 环境验证了 
 - #184 的网站登录回归在 Chromium 和 WebKit 的 390、1440 CSS 像素与浅深主题下各通过四项。验证码阶段刷新后仅显示验证码输入框，过期后用键盘返回原会话。测试使用隔离 API，未提交凭据。实际网站投递和接管待验。 [验收脚本 #276](https://github.com/1123786563/OpenBot/pull/276) · [Chromium](/Users/wuyj/.local/state/openbot-spec-127/evidence/web184-code-chromium.F75An0/run.json) · [WebKit](/Users/wuyj/.local/state/openbot-spec-127/evidence/web184-code-webkit.Y7escJ/run.json)
 - #189 在主线生产构建 `9f3de65b7` 上通过 Ideas 八项和 Tasks 四项隔离浏览器场景。Ideas 提交期间阻止重复操作，成功后提供可聚焦的直达会话链接。Tasks 在 320 CSS 像素下通过键盘取消、重试、字号及对比度检查；简体中文的完成提示和目标分组同名。真实 Bot 执行及实机播报待验。 [Ideas 实现 #280](https://github.com/1123786563/OpenBot/pull/280) · [Ideas 复验](/Users/wuyj/.local/state/openbot-spec-127/evidence/web189-main-9f3de6.I0FE6F/ideas/run.json) · [Tasks 复验](/Users/wuyj/.local/state/openbot-spec-127/evidence/web189-main-9f3de6.I0FE6F/tasks/run.json)
 - #192 在主线 `d4f66b14e` 的 Audit 页面及 PostgreSQL 联合回归通过 16 项。通过 HTTP 查询和导出首屏之外的同一历史记录后，降低测试账号的数据库权限，原模拟会话的两个请求都返回 403。另有八个隔离浏览器场景证实 503 保留旧记录、403 清除旧记录。真实身份供应商登录后的 Audit 验收待补。 [集成测试 #277](https://github.com/1123786563/OpenBot/pull/277) · [主线测试](/Users/wuyj/.local/state/openbot-spec-127/evidence/web192-audit-merged.8BgDOk/results.log) · [浏览器矩阵](/Users/wuyj/.local/state/openbot-spec-127/evidence/web192-audit-matrix.gwSkZL/browser.json)
+
+
+### #186 Bot 清单、创建和区块恢复
+
+主线生产构建 `5fd1f25a6` 在 Chromium 和 WebKit 上通过 16 个清单返回场景，覆盖 390 和 1440 CSS 像素及浅深主题。浏览器返回和档案的「Bots」链接均保留搜索与 Bot 行焦点。320 CSS 像素的四次隔离创建仅写入一次，新档案标题获得焦点，返回后创建弹层保持关闭。390 CSS 像素的四次删除确认均量得两个 44 CSS 像素高的操作按钮，Escape 后零写入并恢复焦点。 [构建清单](/Users/wuyj/.local/state/openbot-spec-127/evidence/web186-main-5fd1f25.Kqj5Rq/manifest.json) · [清单与档案修复 #283](https://github.com/1123786563/OpenBot/pull/283) · [清单返回](/Users/wuyj/.local/state/openbot-spec-127/evidence/web186-main-5fd1f25.Kqj5Rq/roster/run.json) · [创建](/Users/wuyj/.local/state/openbot-spec-127/evidence/web186-main-5fd1f25.Kqj5Rq/create/run.json) · [删除确认](/Users/wuyj/.local/state/openbot-spec-127/evidence/web186-delete-controls.cT7svm/run.json)
+
+同一构建在 390 CSS 像素下通过五个区块各四次隔离读取恢复。Chromium 和 WebKit 的浅深主题均用 Enter 原位重试。下表列出恢复后可见的内容和焦点。
+
+| 区块 | 恢复验证 | 焦点 | 记录 |
+| --- | --- | --- | --- |
+| Access | 应用权限恢复，审批规则区块仍可用 | What it can do | [四场景](/Users/wuyj/.local/state/openbot-spec-127/evidence/web186-access-retry.SWTEu5/run.json) |
+| 审批规则 | 已保存的规则重新显示 | Rules | [四场景](/Users/wuyj/.local/state/openbot-spec-127/evidence/web186-rules-retry.ajgs6p/run.json) |
+| 联系方式 | 仅显示当前 Bot 的联系方式 | Connected destinations | [四场景](/Users/wuyj/.local/state/openbot-spec-127/evidence/web186-reach-retry.pUMbik/run.json) |
+| Memory 应用来源 | 仅显示当前 Bot 的来源 | App sources | [四场景](/Users/wuyj/.local/state/openbot-spec-127/evidence/web186-memory-source-retry.7MOQZn/run.json) |
+| Sharing | 两名共享对象和一个群组重新显示 | Sharing | [四场景](/Users/wuyj/.local/state/openbot-spec-127/evidence/web186-sharing-retry.KT1Elq/run.json) |
+
+子页和区块定向测试通过 32 项，隔离 PostgreSQL 和 Setup 界面通过 28 项。真实部署的权限范围、完整数据写入、部署隔离开关、各视图读屏与独立评分仍待验。 [子页测试](/Users/wuyj/.local/state/openbot-spec-127/evidence/web186-subpages-main.WjUPYE/results.log) · [隔离权限测试](/Users/wuyj/.local/state/openbot-spec-127/evidence/web186-isolation-main.OFNT9F/results.log)
 
 ## 逐页记录
 
