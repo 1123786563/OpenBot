@@ -1011,23 +1011,32 @@ test("a first ready stale refresh still retries and renders a later stored messa
   ]);
 }, 3000);
 
-test("mixed history, exhausted failure, and recovery update the notice without duplicating messages", async () => {
+test("mixed history, exhausted failure, and retry preserve the draft without duplicating messages", async () => {
   const view = await mounted();
   await act(async () => currentAgent().addMessage(local));
   history = async () => stored([initial, fresh, broken]);
   await announce(1);
   await view.findByText("Fresh stored reply");
   await view.findByText(oneHole);
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  const draft = "Unsent follow-up";
+  const composer = view.getByRole("textbox", { name: "Message" });
+  await user.type(composer, draft);
   const beforeFailure = historyReads.length;
   history = async () => new NativeResponse("failed", { status: 500 });
   await announce(2);
   await view.findByText(unavailable, {}, { timeout: 4000 });
   expect(historyReads.length - beforeFailure).toBe(3);
   expect(view.queryByText(oneHole)).toBeNull();
+  expect(composer.textContent).toBe(draft);
+  expect(view.getAllByText(fresh.content)).toHaveLength(1);
   history = async () => stored([initial, fresh]);
-  await announce(3);
+  await user.click(view.getByRole("button", { name: "Try again" }));
   await waitFor(() => expect(view.queryByText(unavailable)).toBeNull());
   expect(view.queryByText(oneHole)).toBeNull();
+  expect(view.getByRole("textbox", { name: "Message" })).toBe(composer);
+  expect(composer.textContent).toBe(draft);
+  expect(runRequests).toHaveLength(0);
   expect(currentAgent().messages.map((message) => message.id)).toEqual([
     "initial",
     "local",
