@@ -27,9 +27,9 @@ import {
 } from "@/lib/tasks/mutations";
 import {
   couldNotFinish,
-  TASK_STATUS_LABEL,
   type TaskStatus,
   taskKeys,
+  taskStatusLabel,
 } from "@/lib/tasks/queries";
 import { cn } from "@/lib/utils";
 import { queryClient } from "@/query-client";
@@ -86,7 +86,7 @@ export function TaskRow({
     | undefined;
 }) {
   // Subscribes this row to the interface language, so choosing another one redraws its time in place.
-  useTranslation();
+  const { t } = useTranslation();
   const { task, status } = listed;
   const resolve = useMutation(resolveTaskMutationOptions(queryClient));
   const again = useMutation(tryTaskAgainMutationOptions(queryClient));
@@ -112,8 +112,8 @@ export function TaskRow({
       </ItemMedia>
       <ItemContent>
         <ItemTitle className="line-clamp-none">{task.title}</ItemTitle>
-        <ItemDescription>
-          {[TASK_STATUS_LABEL[status], botName, relativeTime(task.updatedAt)]
+        <ItemDescription className="line-clamp-none break-words text-sm">
+          {[taskStatusLabel(status), botName, relativeTime(task.updatedAt)]
             .filter(Boolean)
             .join(" · ")}
         </ItemDescription>
@@ -135,7 +135,9 @@ export function TaskRow({
               onClick={() => again.mutate(task.id)}
               size="sm"
             >
-              {again.isPending ? "Starting…" : "Try again"}
+              {again.isPending
+                ? t("tasks.starting", "Starting…")
+                : t("tasks.retry", "Try again")}
             </Button>
           ) : null}
           <Link
@@ -147,7 +149,7 @@ export function TaskRow({
             params={{ channelId: task.channelId }}
             to="/channel/$channelId"
           >
-            Open
+            {t("tasks.open", "Open")}
           </Link>
           {canChange && status === "resolved" ? (
             <Button
@@ -157,7 +159,9 @@ export function TaskRow({
               size="sm"
               variant="outline"
             >
-              {resolve.isPending ? "Reopening…" : "Reopen"}
+              {resolve.isPending
+                ? t("tasks.reopening", "Reopening…")
+                : t("tasks.reopen", "Reopen")}
             </Button>
           ) : canChange ? (
             <Button
@@ -170,7 +174,9 @@ export function TaskRow({
               size="sm"
               variant="ghost"
             >
-              {resolve.isPending ? "Saving…" : "Mark done"}
+              {resolve.isPending
+                ? t("tasks.markDoneSaving", "Saving…")
+                : t("tasks.markDone", "Mark done")}
             </Button>
           ) : null}
         </ItemFooter>
@@ -190,7 +196,7 @@ export function TaskRow({
  */
 export function TaskBoardRow({ listed }: { listed: ListedTask }) {
   // Subscribes this row to the interface language, so choosing another one redraws its time in place.
-  useTranslation();
+  const { t } = useTranslation();
   const { task, status } = listed;
   const resolve = useMutation(resolveTaskMutationOptions(queryClient));
   const again = useMutation(tryTaskAgainMutationOptions(queryClient));
@@ -215,7 +221,9 @@ export function TaskBoardRow({ listed }: { listed: ListedTask }) {
               onClick={() => again.mutate(task.id)}
               size="sm"
             >
-              {again.isPending ? "Starting…" : "Try again"}
+              {again.isPending
+                ? t("tasks.starting", "Starting…")
+                : t("tasks.retry", "Try again")}
             </Button>
           ) : null}
           <Button
@@ -224,7 +232,9 @@ export function TaskBoardRow({ listed }: { listed: ListedTask }) {
             size="sm"
             variant="ghost"
           >
-            {resolve.isPending ? "Saving…" : "Mark done"}
+            {resolve.isPending
+              ? t("tasks.markDoneSaving", "Saving…")
+              : t("tasks.markDone", "Mark done")}
           </Button>
           <Button
             render={
@@ -236,14 +246,14 @@ export function TaskBoardRow({ listed }: { listed: ListedTask }) {
             size="sm"
             variant={openFirst ? "default" : "outline"}
           >
-            Open
+            {t("tasks.open", "Open")}
           </Button>
         </>
       }
       detail={nextLine(listed)}
       icon={<Icon />}
       meta={[
-        <span key="status">{TASK_STATUS_LABEL[status]}</span>,
+        <span key="status">{taskStatusLabel(status)}</span>,
         <span key="when">{relativeTime(task.updatedAt)}</span>,
         error ? (
           <span className="text-destructive" key="error" role="alert">

@@ -34,21 +34,13 @@ import { TASK_ORDER } from "@/lib/tasks/groups";
 import { resolveTaskMutationOptions } from "@/lib/tasks/mutations";
 import {
   type BotTask,
-  TASK_STATUS_LABEL,
   type TaskStatus,
+  taskStatusLabel,
 } from "@/lib/tasks/queries";
 
 /** Which list Tasks shows: what waits on you and what your Bots carry, or what to start next. */
 export type TasksView = "active" | "up_next";
 type StatusFilter = "all" | TaskStatus;
-
-const EMPTY_STATUS: Record<TaskStatus, string> = {
-  ready_for_review: "No tasks ready for review.",
-  needs_input: "Nothing needs your input.",
-  failed: "No failed tasks.",
-  working: "No tasks are running.",
-  resolved: "No tasks resolved in the last seven days.",
-};
 
 /** Which list was open last, kept in this browser between visits. */
 export const TASKS_VIEW_STORAGE_KEY = "openduet.tasks-view";
@@ -72,6 +64,9 @@ function rememberView(view: TasksView) {
 }
 
 export function TasksScreen() {
+  const { t } = useTranslation();
+  const workAndHistory = t("tasks.workAndHistory", "Work and history");
+  const ideas = t("tasks.ideas", "Ideas");
   const [view, setView] = useState<TasksView>(rememberedView);
   const [status, setStatus] = useState<StatusFilter>("all");
   const id = useId();
@@ -80,12 +75,15 @@ export function TasksScreen() {
   return (
     <AstryxSurface className="bot-task-views flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <PageShell
-        description="Review active work, approvals and completed tasks, or choose what to start next."
-        title="Bot tasks"
+        description={t(
+          "tasks.description",
+          "Review active work, approvals and completed tasks, or choose what to start next.",
+        )}
+        title={t("tasks.title", "Bot tasks")}
       >
         <VStack gap={4}>
           <TabList
-            aria-label="Task views"
+            aria-label={t("tasks.views", "Task views")}
             onChange={(value) => {
               if (value === "active" || value === "up_next") {
                 setView(value);
@@ -96,15 +94,11 @@ export function TasksScreen() {
             size="lg"
             value={view}
           >
-            <Tab
-              label="Work and history"
-              panelId={activePanel}
-              value="active"
-            />
-            <Tab label="Ideas" panelId={upcomingPanel} value="up_next" />
+            <Tab label={workAndHistory} panelId={activePanel} value="active" />
+            <Tab label={ideas} panelId={upcomingPanel} value="up_next" />
           </TabList>
           <section
-            aria-label="Work and history"
+            aria-label={workAndHistory}
             hidden={view !== "active"}
             id={activePanel}
             role="tabpanel"
@@ -116,7 +110,7 @@ export function TasksScreen() {
             ) : null}
           </section>
           <section
-            aria-label="Ideas"
+            aria-label={ideas}
             hidden={view !== "up_next"}
             id={upcomingPanel}
             role="tabpanel"
@@ -169,12 +163,30 @@ function ActiveView({
   const statusHelpId = useId();
   const statusHelp =
     status === "needs_input"
-      ? "Includes approval requests and questions for you."
+      ? t(
+          "tasks.needsInputHelp",
+          "Includes approval requests and questions for you.",
+        )
       : status === "resolved"
-        ? "Shows tasks resolved in the last seven days."
+        ? t(
+            "tasks.resolvedHelp",
+            "Shows tasks resolved in the last seven days.",
+          )
         : undefined;
   const selectedLabel =
-    status === "all" ? "All statuses" : TASK_STATUS_LABEL[status];
+    status === "all"
+      ? t("tasks.allStatuses", "All statuses")
+      : taskStatusLabel(status);
+  const emptyStatus: Record<TaskStatus, string> = {
+    ready_for_review: t("tasks.empty.ready", "No tasks ready for review."),
+    needs_input: t("tasks.empty.needsInput", "Nothing needs your input."),
+    failed: t("tasks.empty.failed", "No failed tasks."),
+    working: t("tasks.empty.working", "No tasks are running."),
+    resolved: t(
+      "tasks.empty.resolved",
+      "No tasks resolved in the last seven days.",
+    ),
+  };
   const showReset = ready && count === 0 && status !== "all";
 
   function markDone(task: BotTask, trigger: HTMLButtonElement) {
@@ -221,7 +233,7 @@ function ActiveView({
       {confirmation}
       <VStack gap={2} align="start">
         <Text as="p" size="sm">
-          Task status
+          {t("tasks.statusLabel", "Task status")}
         </Text>
         <Select
           value={status}
@@ -231,17 +243,19 @@ function ActiveView({
         >
           <SelectTrigger
             aria-describedby={statusHelp ? statusHelpId : undefined}
-            aria-label="Task status"
+            aria-label={t("tasks.statusLabel", "Task status")}
             className="min-h-11"
             ref={statusTrigger}
           >
             <SelectValue>{selectedLabel}</SelectValue>
           </SelectTrigger>
           <SelectContent {...astryxScope} align="start">
-            <SelectItem value="all">All statuses</SelectItem>
+            <SelectItem value="all">
+              {t("tasks.allStatuses", "All statuses")}
+            </SelectItem>
             {TASK_ORDER.map((option) => (
               <SelectItem key={option} value={option}>
-                {TASK_STATUS_LABEL[option]}
+                {taskStatusLabel(option)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -253,15 +267,25 @@ function ActiveView({
         ) : null}
         <Text as="p" color="secondary" size="sm" role="status">
           {showReset
-            ? EMPTY_STATUS[status]
+            ? emptyStatus[status]
             : ready && count > 0
-              ? `${count} ${count === 1 ? "item" : "items"}${status === "all" ? "" : ` in ${selectedLabel}`}.`
+              ? status === "all"
+                ? t(
+                    "tasks.itemCount",
+                    "{count, plural, one {# item.} other {# items.}}",
+                    { count },
+                  )
+                : t(
+                    "tasks.filteredCount",
+                    "{count, plural, one {# item in {status}.} other {# items in {status}.}}",
+                    { count, status: selectedLabel },
+                  )
               : ""}
         </Text>
         {showReset ? (
           <Button
             size="lg"
-            label="Show all statuses"
+            label={t("tasks.resetStatus", "Show all statuses")}
             variant="secondary"
             style={{ minHeight: "var(--spacing-11)" }}
             onClick={() => {
@@ -272,17 +296,22 @@ function ActiveView({
         ) : null}
       </VStack>
       {taskList.pending || waitingPending ? (
-        <ReadStatus kind="loading" message="Loading Bot tasks…" />
+        <ReadStatus
+          kind="loading"
+          message={t("tasks.loading", "Loading Bot tasks…")}
+        />
       ) : null}
       {taskList.error ? (
         <ReadError
           description={
-            listed.length ? "Showing the last loaded tasks." : undefined
+            listed.length
+              ? t("tasks.cached", "Showing the last loaded tasks.")
+              : undefined
           }
           focusAfterRetry={() =>
             firstTaskHeading.current ?? statusTrigger.current
           }
-          message="Couldn’t load Bot tasks"
+          message={t("tasks.loadFailed", "Couldn’t load Bot tasks")}
           retry={taskList.refetch}
           retryBelow
           retryLabel={t("tasks.retryTasks", "Retry loading tasks")}
@@ -291,7 +320,10 @@ function ActiveView({
       ) : null}
       {waitingError ? (
         <ReadError
-          message="Couldn’t load approvals and questions"
+          message={t(
+            "tasks.approvalsFailed",
+            "Couldn’t load approvals and questions",
+          )}
           retry={waiting.refetch}
           retryBelow
           retryLabel={t(
@@ -305,8 +337,11 @@ function ActiveView({
         />
       ) : null}
       {ready && count === 0 && status === "all" ? (
-        <InlineEmpty title="No Bot tasks yet">
-          Work your Bots start and tasks you complete will appear here.
+        <InlineEmpty title={t("tasks.emptyTitle", "No Bot tasks yet")}>
+          {t(
+            "tasks.emptyBody",
+            "Work your Bots start and tasks you complete will appear here.",
+          )}
         </InlineEmpty>
       ) : null}
       {groups.map((group, index) => (
@@ -314,10 +349,13 @@ function ActiveView({
           className="mt-0"
           headingRef={index === 0 ? firstTaskHeading : undefined}
           key={group.status}
-          title={TASK_STATUS_LABEL[group.status]}
+          title={taskStatusLabel(group.status)}
           description={
             group.status === "resolved" && status === "all"
-              ? "Tasks resolved in the last seven days."
+              ? t(
+                  "tasks.resolvedDescription",
+                  "Tasks resolved in the last seven days.",
+                )
               : undefined
           }
         >
@@ -335,7 +373,7 @@ function ActiveView({
         embedded
         sectionLink={
           <Link className="text-sm underline underline-offset-2" to="/routines">
-            Manage Routines
+            {t("tasks.manageRoutines", "Manage Routines")}
           </Link>
         }
       />
