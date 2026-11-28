@@ -85,6 +85,7 @@
   "frame.repeatedFailureStatus": "The page still couldn’t load. You can try again or open your workspace.",
   "frame.requestFailed": "That request failed.",
   "frame.retry": "Retry",
+  "frame.routeSupportCode": "If you contact support, include code {code}.",
   "frame.skipToContent": "Skip to content",
   "frame.tryAgain": "Try again",
   "ideas.actionConsequences": "Work on it starts a task. Dismiss tells check-ins to skip similar ideas for 30 days.",

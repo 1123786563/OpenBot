@@ -106,6 +106,7 @@ type Recovery =
       retry: (restoreFocus: boolean) => Promise<boolean>;
       offline: boolean;
       repeated: boolean;
+      supportCode: "WEB-ROUTE-ASSET" | "WEB-ROUTE-ERROR";
     };
 
 function RouteRecovery(recovery: Recovery) {
@@ -213,6 +214,15 @@ function RouteRecovery(recovery: Recovery) {
             {failureStatus ? (
               <Text as="p" color="secondary" justify="center" role="status">
                 {failureStatus}
+              </Text>
+            ) : null}
+            {recovery.kind === "error" && recovery.repeated ? (
+              <Text as="p" color="secondary" size="sm" justify="center">
+                {t(
+                  "frame.routeSupportCode",
+                  "If you contact support, include code {code}.",
+                  { code: recovery.supportCode },
+                )}
               </Text>
             ) : null}
             {recovery.kind === "missing" ? (
@@ -332,6 +342,9 @@ export function RouteLoadError({ error, reset }: ErrorComponentProps) {
       kind="error"
       offline={!online}
       repeated={failedEntry === entry}
+      supportCode={
+        isRouteModuleLoadError(error) ? "WEB-ROUTE-ASSET" : "WEB-ROUTE-ERROR"
+      }
       retry={async (restoreFocus) => {
         const previous = recoveryAttempts.get(router);
         if (

@@ -85,6 +85,7 @@
   "frame.repeatedFailureStatus": "此页面仍然无法加载。你可以重试，或打开工作区。",
   "frame.requestFailed": "请求失败。",
   "frame.retry": "重试",
+  "frame.routeSupportCode": "联系支持人员时，请提供故障代码 {code}。",
   "frame.skipToContent": "跳到主要内容",
   "frame.tryAgain": "重试",
   "ideas.actionConsequences": "选择「开始处理」会启动任务。选择「忽略」后，定期检查将在 30 天内跳过类似的建议。",
