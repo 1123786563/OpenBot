@@ -182,16 +182,14 @@ function RouteComponent() {
 
 function PendingAccountRequests() {
   const { t } = useTranslation();
-  const options = sharedUseRequestsQueryOptions(true);
-  const requests = useQuery({
-    ...options,
-    refetchInterval: (query) =>
-      query.state.status === "error" ? false : options.refetchInterval,
-  });
+  const requests = useQuery(sharedUseRequestsQueryOptions(true));
   const heading = useRef<HTMLHeadingElement>(null);
-  if (requests.isPending) return null;
+  if (requests.isPending && !requests.isFetched) return null;
+  // After an initial failure, a retry has no data and briefly reports pending.
+  // Keep the section mounted so the retry can restore focus to its heading.
+  const showReadError = requests.isError || requests.isPending;
   const pending = requests.data?.length ?? 0;
-  if (!requests.error && pending === 0) return null;
+  if (!showReadError && pending === 0) return null;
   const title = t("admin.overview.requests", "Shared account requests");
   const count = t(
     "admin.overview.requestsCount",
@@ -204,7 +202,7 @@ function PendingAccountRequests() {
       headingRef={heading}
       title={t("admin.overview.needsAttention", "Needs attention")}
     >
-      {requests.error ? (
+      {showReadError ? (
         <ReadError
           focusAfterRetry={() => heading.current}
           message={t(
