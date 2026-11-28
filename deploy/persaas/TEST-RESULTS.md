@@ -54,3 +54,7 @@
 用户提供的现有密钥已保存到 Persaas Runtime/prod 的 `/server`、`/worker`，使用应用实际读取的 `OPENBOT_CUBE_API_KEY`，API 地址为 `https://sandboxes.persaas.cn`。密钥未写入仓库。两服务已重新创建；应用子进程加载密钥后，请求 `/templates` 均返回 200（5 个模板）。A 上还验证 `/sandboxes`、`/volumes` 返回 200，可见 READY 浏览器模板和两个既有测试卷。主站返回 200，API 容器健康。未登录或修改 CubeSandbox 主机。
 
 这次只完成 API 凭据接入：运行配置尚缺浏览器模板选择、browser/envd 数据通道地址、签名密钥及用户专属卷绑定，不能据此宣称浏览器功能已可用，也未复用已有测试卷。
+
+## Casdoor 登录按钮文案 — 2026-11-28
+
+登录页提供者名称由 Okta 改为 Casdoor，中英文模板均使用新名称；内部 OAuth provider ID 保持 `okta`，现有回调和连接配置继续使用。40 项登录客户端及登录页测试通过，Vite 生产构建通过。新前端发布到 B 的 `openbot-server:persaas-casdoor-20261128`（在原后端镜像上加入构建的 dist，保留旧资源供已打开页面使用），Compose 镜像引用同步更新；回滚配置位于 B `/opt/persaas/backups/apps-before-casdoor-label.yml`。公网健康接口 200、新版 client 资源包含 Casdoor 名称、OAuth 仍跳转 `casdoor.persaas.cn`，均已验证。

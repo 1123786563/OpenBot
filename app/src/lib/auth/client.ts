@@ -8,7 +8,7 @@ export const authClient = createAuthClient({ plugins: [ssoClient()] });
 const PROVIDER_NAMES: Record<AuthProviderId, string> = {
   google: "Google",
   microsoft: "Microsoft",
-  okta: "Okta",
+  okta: "Casdoor",
 };
 
 export function providerName(provider: AuthProviderId): string {

@@ -185,6 +185,6 @@ describe("providerName", () => {
   test("gives each provider the name people call it", () => {
     expect(providerName("google")).toBe("Google");
     expect(providerName("microsoft")).toBe("Microsoft");
-    expect(providerName("okta")).toBe("Okta");
+    expect(providerName("okta")).toBe("Casdoor");
   });
 });

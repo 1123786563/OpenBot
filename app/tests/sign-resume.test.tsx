@@ -682,13 +682,13 @@ test("every provider keeps its own name, in the interface language", async () =>
   expect(
     view.getByRole("button", { name: "使用 Microsoft 继续" }),
   ).toBeTruthy();
-  expect(view.getByRole("button", { name: "使用 Okta 继续" })).toBeTruthy();
+  expect(view.getByRole("button", { name: "使用 Casdoor 继续" })).toBeTruthy();
 
   await pinLocale("en");
   expect(
     view.getByRole("button", { name: "Continue with Microsoft" }),
   ).toBeTruthy();
-  expect(view.getByRole("button", { name: "Continue with Okta" })).toBeTruthy();
+  expect(view.getByRole("button", { name: "Continue with Casdoor" })).toBeTruthy();
 });
 
 /*

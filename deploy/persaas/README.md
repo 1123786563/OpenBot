@@ -6,7 +6,7 @@
 
 1. 在 Termius 登录 129.28.39.52。
 2. 在服务器查看 `/opt/persaas/credentials.json`。此文件仅 root 可读，不要发到聊天或提交到 Git。
-3. 打开 `https://www.persaas.cn/`，选择 Okta 登录。当前连接器名称显示为 Okta，实际跳转到 Casdoor。
+3. 打开 `https://www.persaas.cn/`，选择 Casdoor 登录，跳转到 Casdoor。
 4. 在 Persaas 应用中使用用户名 `admin` 和文件中的 `ownerPassword` 登录。
 
 管理登录服务时，打开 `https://casdoor.persaas.cn/`，使用内置组织 `built-in` 的 `admin` 和文件中的 `casdoorPassword`。两种密码不同。
