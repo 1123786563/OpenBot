@@ -37,6 +37,11 @@ export function RoutinesConnectionPage() {
   const routines = useQuery(routinesQueryOptions());
   const heading = useRef<HTMLHeadingElement>(null);
   const summary = routinesSummary(routines.data?.routines);
+  const summaryText = routines.isPending
+    ? "Loading your routines…"
+    : routines.error
+      ? "Open Routines to see them."
+      : (summary ?? "Open Routines to see them.");
   return (
     <ConnectionPage
       action={<NewRoutineButton />}
@@ -54,10 +59,8 @@ export function RoutinesConnectionPage() {
             </ItemMedia>
             <ItemContent>
               <ItemTitle>Your routines</ItemTitle>
-              <ItemDescription>
-                {routines.error
-                  ? "Open Routines to see them."
-                  : (summary ?? "Open Routines to see them.")}
+              <ItemDescription role={routines.isPending ? "status" : undefined}>
+                {summaryText}
               </ItemDescription>
             </ItemContent>
             <ItemActions>
