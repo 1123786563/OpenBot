@@ -96,6 +96,9 @@ test.each([
       await waitFor(() => expect(document.activeElement).toBe(selector));
       if (url.includes("view=goals")) {
         expect(
+          fetchMock.mock.calls.filter(([input]) => String(input) === "/api/me"),
+        ).toHaveLength(0);
+        expect(
           view.getByRole("heading", { name: "Goals and routines by Bot" }),
         ).toBeTruthy();
         expect(view.getByRole("link", { name: "All Bot goals" })).toBeTruthy();

@@ -98,7 +98,12 @@ function GoalsOverview() {
               ? "Couldn’t load available Bots"
               : "Couldn’t load your account"
           }
-          retry={() => Promise.all([agents.refetch(), user.refetch()])}
+          retry={() =>
+            Promise.all([
+              agents.isError ? agents.refetch() : undefined,
+              user.isError ? user.refetch() : undefined,
+            ])
+          }
           retrying={agents.isFetching || user.isFetching}
           retryLabel={t("bots.retryChoices", "Retry loading Bot choices")}
           retryBelow
