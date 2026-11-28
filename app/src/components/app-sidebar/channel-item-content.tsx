@@ -57,7 +57,7 @@ export function ChannelItemContent({
               {t("nav.working", "Working")}
             </span>
           ) : (
-            <span className="shrink-0 whitespace-nowrap text-[12px] leading-4 text-muted-foreground/70">
+            <span className="shrink-0 whitespace-nowrap text-[12px] leading-4 text-muted-foreground">
               {lastMessageAt}
             </span>
           )}
