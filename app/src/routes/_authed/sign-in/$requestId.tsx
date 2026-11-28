@@ -4,7 +4,14 @@ import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
-import { type ComponentProps, useEffect, useId, useRef, useState } from "react";
+import {
+  type ComponentProps,
+  type Ref,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import { PageShell } from "@/components/layout/page-shell";
 import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { SignInFields } from "@/components/passwords/sign-in-form";
@@ -72,6 +79,7 @@ function SignInPage() {
 
 function SignInRequestPage({ requestId }: { requestId: string }) {
   const [retrying, setRetrying] = useState(false);
+  const recoveredHeading = useRef<HTMLHeadingElement>(null);
   const request = useQuery({
     ...signInRequestQueryOptions(requestId),
     retry: (failureCount, error) => failureCount < 1 && !isUnavailable(error),
@@ -104,6 +112,7 @@ function SignInRequestPage({ requestId }: { requestId: string }) {
                 setRetrying(false);
               }
             }}
+            focusAfterRetry={() => recoveredHeading.current}
             retrying={retrying || request.isFetching}
             retryBelow
           />
@@ -132,19 +141,28 @@ function SignInRequestPage({ requestId }: { requestId: string }) {
   if (closed) {
     return <SignInRecovery {...closed} threadId={data.threadId} />;
   }
-  return <ActiveSignIn request={data} refreshFailed={request.isRefetchError} />;
+  return (
+    <ActiveSignIn
+      headingRef={recoveredHeading}
+      request={data}
+      refreshFailed={request.isRefetchError}
+    />
+  );
 }
 
 function ActiveSignIn({
+  headingRef,
   request,
   refreshFailed,
 }: {
+  headingRef: Ref<HTMLHeadingElement>;
   request: SignInRequest;
   refreshFailed: boolean;
 }) {
   const { data: bot } = useQuery(agentQueryOptions(request.botId));
   return (
     <PageShell
+      headingRef={headingRef}
       title={PAGE_TITLE}
       description={
         <>
