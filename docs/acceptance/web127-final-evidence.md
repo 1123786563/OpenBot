@@ -34,9 +34,15 @@ Web 构建提交为 `ccca02100ed6f9eb68321eb03541053553c04449`，入口 HTML 的
 
 本轮使用本地隔离模拟 API。逐页真实任务与独立评分仍待验，正式验收维持 0/88。
 
+### 主线生产构建走查
+
+Chromium 使用主线 `bbbbe63fa` 的生产构建和隔离 API，完成 360 个页面样本和 63 个书签样本。页面样本包括 88 个正式视图和两个共享恢复视图，覆盖桌面、窄屏和浅深主题。63 个书签都到达预期地址。页面异常、文档级横向溢出和未实现的模拟接口均为零。首次使用页按预期补上 `step=welcome`。本轮记录首屏与路由行为，完整任务和独立评分继续待验。 [构建清单](/Users/wuyj/.local/state/openbot-spec-127/evidence/current-main-web127.hjF9eT/manifest.json) · [走查汇总](/Users/wuyj/.local/state/openbot-spec-127/evidence/current-main-web127.hjF9eT/summary.json)
+
 ## 书签与退役
 
 21 条书签 × Team 管理员、Team 成员、Personal 共 **63/63**，覆盖六个旧外观入口、Bot 参数、Personal Memory 回退和两个回调参数。两条 Connections 回调在页面消费参数之前经过带参数的目标地址，浏览器历史保存在 `bookmark-history/run.json`。未知 `/s/*` 进入共享恢复页。组件测试另覆盖模拟登录返回和角色变化。 [书签合同](web127-bookmarks.json)
+
+六条旧外观路径在 Team 管理员、Team 成员和 Personal 下共 18 次跳转均匹配。Memory 保留按角色回退，Ideas、Goals 和 Activity 保留 Bot 参数。书签、主题与偏好定向测试共 123 项通过，其中包括隔离 PostgreSQL 对旧偏好记录的兼容读取。 [六条路径矩阵](/Users/wuyj/.local/state/openbot-spec-127/evidence/current-main-web127.hjF9eT/legacy-six-route-matrix.json) · [定向测试](/Users/wuyj/.local/state/openbot-spec-127/evidence/current-main-web127.hjF9eT/legacy-retirement-tests.log)
 
 `PATCH /api/settings/preferences` 只接受 `openbot` 作为 skin。退役值返回 400，混合请求中的其他变更也不生效。既有 PostgreSQL 行即使存有 `openduet`，读出和更新其他偏好后的响应均为 `openbot`，数据库继续保留兼容值。
 
