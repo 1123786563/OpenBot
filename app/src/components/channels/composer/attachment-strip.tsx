@@ -145,7 +145,7 @@ export function AttachmentStrip({
             <IconFile className="size-5 shrink-0 text-muted-foreground" />
             <Stack className="min-w-0">
               <Text
-                className="font-medium text-xs"
+                className="font-medium text-sm"
                 display="block"
                 style={{
                   overflowWrap: "anywhere",
