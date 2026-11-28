@@ -3,6 +3,7 @@ import { VStack } from "@astryxdesign/core/VStack";
 import { IconChevronLeft } from "@tabler/icons-react";
 import { Link, type LinkProps } from "@tanstack/react-router";
 import * as React from "react";
+import { appConfig } from "@/lib/generated/application-config";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "../ui/button";
 import { PageColumn, PageHeader, type ShellWidth } from "./page-parts";
@@ -73,7 +74,7 @@ export function PageShell({
    * ride rather than every route setting it by hand.
    */
   React.useEffect(() => {
-    document.title = `${title} · OpenBot`;
+    document.title = `${title} · ${appConfig.brand.productName}`;
   }, [title]);
 
   const header = (

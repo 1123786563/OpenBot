@@ -10,17 +10,18 @@ import {
 } from "@tanstack/react-router";
 import { act, cleanup, render, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { PageShell } from "@/components/layout/page-shell";
+import { ReadError } from "@/components/layout/read-status";
 import {
   MissingPage,
   RouteLoadError,
 } from "@/components/layout/route-recovery";
-import { PageShell } from "@/components/layout/page-shell";
-import { ReadError } from "@/components/layout/read-status";
 import { Toaster, toast } from "@/components/ui/toast";
-import { client } from "@/lib/client";
 import { useTranslation } from "@/i18n";
-import { pinLocale } from "./i18n";
+import { client } from "@/lib/client";
+import { appConfig } from "@/lib/generated/application-config";
 import { Route as ScreenRoute } from "@/routes/_authed/_app/s/$screen";
+import { pinLocale } from "./i18n";
 import { settleReactWork } from "./settle-react-work";
 
 /**
@@ -318,20 +319,22 @@ function NamedPage() {
 
 test("the tab title follows a translated page, and a page still in English stays so", async () => {
   const unmigrated = render(<PageShell title="Connections">Body</PageShell>);
-  expect(document.title).toBe("Connections · OpenBot");
+  expect(document.title).toBe(`Connections · ${appConfig.brand.productName}`);
 
   await pinLocale("zh-CN");
 
   // Its title never changes, so nothing asks the tab to be said again.
-  expect(document.title).toBe("Connections · OpenBot");
+  expect(document.title).toBe(`Connections · ${appConfig.brand.productName}`);
   unmigrated.unmount();
 
   render(<NamedPage />);
-  expect(document.title).toBe("页面不存在 · OpenBot");
+  expect(document.title).toBe(`页面不存在 · ${appConfig.brand.productName}`);
 
   await pinLocale("en");
 
-  expect(document.title).toBe("Page not found · OpenBot");
+  expect(document.title).toBe(
+    `Page not found · ${appConfig.brand.productName}`,
+  );
 });
 
 test("an unsupported legacy screen keeps the app shell around the missing page", async () => {
