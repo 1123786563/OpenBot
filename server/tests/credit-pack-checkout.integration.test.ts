@@ -2640,6 +2640,229 @@ test("a live channel pays, grants, refunds through its provider and reconciles o
   }
 }, 20_000);
 
+test("Alipay-only Flexprice checkout grants once and revokes on the full original refund", async () => {
+  const accountId = accountIds[1];
+  const orderId = crypto.randomUUID();
+  const invoiceId = "inv_alipay_acceptance";
+  const paymentId = "pay_alipay_acceptance";
+  const customerId = "cus_alipay_acceptance";
+  const webhookToken = "fixture-alipay-acceptance-token";
+  const apiKey = "fixture-alipay-acceptance-key";
+  const environmentId = "alipay-acceptance-environment";
+  const invoicePath = `/v1/invoices/${invoiceId}`;
+  const refundMethods: string[] = [];
+  let paidInvoice = false;
+  let refundConfirmed = false;
+  const invoice = () => ({
+    id: invoiceId,
+    customer_id: customerId,
+    metadata: { openbot_account_id: accountId },
+    idempotency_key: `openbot-credit-pack:${orderId}`,
+    invoice_status: "FINALIZED",
+    payment_status: paidInvoice ? "SUCCEEDED" : "PENDING",
+    currency: "CNY",
+    total: "25",
+    amount_due: "25",
+    amount_paid: paidInvoice ? "25" : "0",
+    amount_remaining: paidInvoice ? "0" : "25",
+    paid_at: paidInvoice ? new Date().toISOString() : undefined,
+  });
+  const upstream = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      if (
+        request.headers.get("x-api-key") !== apiKey ||
+        request.headers.get("x-environment-id") !== environmentId
+      )
+        return new Response(null, { status: 401 });
+      const { pathname } = new URL(request.url);
+      if (pathname === `/v1/customers/external/openbot-alipay-${accountId}`)
+        return Response.json({
+          id: customerId,
+          external_id: `openbot-alipay-${accountId}`,
+        });
+      if (pathname === "/v1/invoices" && request.method === "POST") {
+        expect(await request.json()).toMatchObject({
+          currency: "CNY",
+          line_items: [{ amount: "25.00", quantity: "1" }],
+        });
+        return Response.json(invoice());
+      }
+      if (pathname === invoicePath) return Response.json(invoice());
+      if (pathname === `${invoicePath}/qr-checkout`) {
+        if (request.method === "POST")
+          expect(await request.json()).toMatchObject({ channel: "alipay" });
+        return Response.json({
+          channel: "alipay",
+          order_id: paymentId,
+          status: paidInvoice ? "paid" : "pending",
+          amount: "25",
+          currency: "CNY",
+          qr_code: "https://qr.alipay.com/fixture",
+          expires_at: new Date(Date.now() + 60_000).toISOString(),
+        });
+      }
+      if (pathname === `${invoicePath}/payments/${paymentId}/original-refund`) {
+        refundMethods.push(request.method);
+        return Response.json({
+          invoiceId,
+          paymentId,
+          channel: "alipay",
+          amountCents: 2500,
+          state: refundConfirmed ? "confirmed" : "unknown",
+        });
+      }
+      return new Response(null, { status: 404 });
+    },
+  });
+
+  try {
+    const mountAlipay = (eligible: string) => {
+      const settings = loadFlexpriceAlipaySettings({
+        OPENBOT_FLEXPRICE_ALIPAY_ENABLED: "true",
+        OPENBOT_FLEXPRICE_WECHAT_ENABLED: "false",
+        OPENBOT_FLEXPRICE_ALIPAY_URL: upstream.url.origin,
+        OPENBOT_FLEXPRICE_ALIPAY_API_KEY: apiKey,
+        OPENBOT_FLEXPRICE_ENVIRONMENT_ID: environmentId,
+        OPENBOT_FLEXPRICE_ALIPAY_WEBHOOK_TOKEN: webhookToken,
+        OPENBOT_FLEXPRICE_ALIPAY_MERCHANT: "fixture-flexprice-merchant",
+        OPENBOT_FLEXPRICE_ALIPAY_PRODUCTS: code,
+        OPENBOT_FLEXPRICE_ALIPAY_APPLICATION_IDS: openbotApp,
+        OPENBOT_FLEXPRICE_ALIPAY_ACCOUNT_IDS: eligible,
+      });
+      if (!settings) throw new Error("Alipay checkout settings are required.");
+      return new Hono()
+        .route(
+          "/",
+          createTestCreditRoutes({
+            ledger,
+            paid: { ledger: paid, flexpriceAlipay: settings },
+            authenticate: async (request) =>
+              request.headers.has("x-buyer")
+                ? { issuer, subject: bob }
+                : undefined,
+          }),
+        )
+        .route(
+          "/admin",
+          createFlexpricePackRefundRoutes(
+            paid,
+            async (context, next) => {
+              context.set("actor", {
+                id: "operator",
+                email: "operator@example.test",
+                role: context.req.header("x-admin") ? "admin" : "user",
+              });
+              await next();
+            },
+            settings,
+          ),
+        );
+    };
+    let billing = mountAlipay(accountId);
+    const request = (
+      path: string,
+      body?: object,
+      headers: Record<string, string> = { "x-buyer": "fixture" },
+    ) =>
+      billing.request(path, {
+        method: body ? "POST" : "GET",
+        headers: { ...headers, "content-type": "application/json" },
+        body: body && JSON.stringify(body),
+      });
+    const balance = async () =>
+      BigInt(
+        (await (await request("/paid/balance")).json()).availableMicrocredits,
+      );
+    const root = "/paid/credit-pack/alipay/flexprice";
+    const checkout = `${root}/orders/${orderId}/checkout`;
+    const verify = `${root}/orders/${orderId}/verify`;
+    const callback = "/credit-pack-flexprice/alipay/callback";
+    const refund = `/admin/accounts/${accountId}/credit-pack-orders/${orderId}/refund`;
+    const admin = { "x-admin": "fixture" };
+    const notice = {
+      event_type: "invoice.update.payment",
+      invoice: { id: invoiceId },
+    };
+    const bearer = { authorization: `Bearer ${webhookToken}` };
+
+    await approvePaths();
+    const product = await publish(2500, 25_000_000n);
+    const before = await balance();
+    expect(await (await request(root)).json()).toMatchObject({
+      channels: ["alipay"],
+      offers: [expect.objectContaining({ channels: ["alipay"] })],
+    });
+    const place = { orderId, productCode: code, version: product.version };
+    expect(
+      (await request(`${root}/orders`, { ...place, channel: "wechat" })).status,
+    ).toBe(404);
+    expect((await request(`${root}/orders`, place)).status).toBe(201);
+    expect((await request(checkout, { channel: "wechat" })).status).toBe(404);
+    expect(await (await request(checkout, {})).json()).toMatchObject({
+      channel: "alipay",
+      status: "pending",
+      qrCode: "https://qr.alipay.com/fixture",
+    });
+    expect((await request(callback, notice, {})).status).toBe(401);
+    expect(await balance()).toBe(before);
+
+    // Empty allowlist pauses sales while payment reconciliation and refunds remain mounted.
+    billing = mountAlipay("");
+    expect((await request(root)).status).toBe(404);
+    expect(
+      (
+        await request(`${root}/orders`, {
+          ...place,
+          orderId: crypto.randomUUID(),
+        })
+      ).status,
+    ).toBe(404);
+    expect((await request(checkout, {})).status).toBe(404);
+    paidInvoice = true;
+    const results = await Promise.all([
+      request(verify, {}),
+      request(callback, notice, bearer),
+      request(callback, notice, bearer),
+    ]);
+    expect(results.map(({ status }) => status)).toEqual([200, 200, 200]);
+    expect(await (await request(verify, {})).json()).toMatchObject({
+      channel: "alipay",
+      state: "verified",
+    });
+    expect(await balance()).toBe(before + 25_000_000n);
+
+    expect((await request(`${refund}/approve`, {})).status).toBe(403);
+    const pending = await request(`${refund}/approve`, {}, admin);
+    expect(pending.status).toBe(202);
+    const { refundId } = await pending.json();
+    expect(await (await request(verify, {})).json()).toMatchObject({
+      creditsFrozen: true,
+      refund: { id: refundId, state: "requested", amountCents: 2500 },
+    });
+    expect(await balance()).toBe(before);
+    refundConfirmed = true;
+    for (let attempt = 0; attempt < 2; attempt++)
+      expect(
+        await (await request(`${refund}/verify`, {}, admin)).json(),
+      ).toEqual({
+        refundId,
+        state: "confirmed",
+      });
+    expect((await request(callback, notice, bearer)).status).toBe(200);
+    expect(refundMethods).toEqual(["POST", "GET"]);
+    expect(await (await request(verify, {})).json()).toMatchObject({
+      state: "refunded",
+      creditsFrozen: false,
+      refund: { id: refundId, state: "confirmed", amountCents: 2500 },
+    });
+    expect(await balance()).toBe(before);
+  } finally {
+    await upstream.stop(true);
+  }
+});
+
 test("Flexprice two-channel checkout locks the buyer's CNY quote and settles only a matching invoice", async () => {
   const buyer = accountIds[1];
   const orderId = crypto.randomUUID();

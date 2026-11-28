@@ -14,7 +14,7 @@ const receipt = z.object({
 export function createFlexpricePackRefundRoutes(
   paid: PaidCreditLedger,
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
-  settings: { baseUrl: string; apiKey: string },
+  settings: { baseUrl: string; apiKey: string; environmentId?: string },
 ) {
   const api = new Hono<{ Variables: AppVariables }>();
   const origin = new URL(settings.baseUrl);
@@ -107,7 +107,12 @@ export function createFlexpricePackRefundRoutes(
       `${origin.origin}/v1/invoices/${encodeURIComponent(invoiceId)}/payments/${encodeURIComponent(paymentId)}/original-refund`,
       {
         method: submit ? "POST" : "GET",
-        headers: { "x-api-key": settings.apiKey },
+        headers: {
+          "x-api-key": settings.apiKey,
+          ...(settings.environmentId
+            ? { "x-environment-id": settings.environmentId }
+            : {}),
+        },
         redirect: "error",
         signal: AbortSignal.timeout(10_000),
       },
