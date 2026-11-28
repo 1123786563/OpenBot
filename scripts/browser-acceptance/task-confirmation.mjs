@@ -148,6 +148,7 @@ for (const [engine, theme] of [
       resolvedAt: null,
     };
     let writes = 0;
+    let reopens = 0;
     let approvalsReady = false;
     const chinese = engine === webkit;
     const labels = chinese
@@ -178,6 +179,12 @@ for (const [engine, theme] of [
       task.status = "resolved";
       task.resolvedAt = now;
       return route.fulfill({ status: 503, json: {} });
+    });
+    await page.route("**/api/tasks/review/reopen", (route) => {
+      reopens++;
+      task.status = "ready_for_review";
+      task.resolvedAt = null;
+      return route.fulfill({ json: { task } });
     });
     await page.goto(new URL("/tasks", FIXTURE_APP_URL).href);
     const retryApprovals = page.getByRole("button", {
@@ -270,12 +277,25 @@ for (const [engine, theme] of [
       .getByRole("heading", { name: labels.resolved, exact: true })
       .waitFor();
     assert.equal(writes, 1);
+    const reopen = page.getByRole("button", {
+      name: labels.reopen,
+      exact: true,
+    });
+    await reopen.press("Enter");
+    await page
+      .getByRole("button", { name: labels.mark, exact: true })
+      .waitFor();
+    await page
+      .getByRole("heading", { name: labels.resolved, exact: true })
+      .waitFor({ state: "hidden" });
+    assert.equal(reopens, 1);
     assert.deepEqual(errors, []);
     records.push({
       browser: engine.name(),
       theme,
       retryFrames,
       metadataLayout,
+      reopens,
       approvalsContrast,
       dialogContrast,
       writeErrorContrast,
