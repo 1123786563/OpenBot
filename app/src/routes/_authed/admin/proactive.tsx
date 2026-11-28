@@ -53,6 +53,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { canKeepCachedRead } from "@/lib/client";
 import {
   setCapabilityMutationOptions,
   setEnterpriseSettingMutationOptions,
@@ -163,16 +164,23 @@ export function CheckInsPage() {
             retry={overview.refetch}
             retrying={overview.isFetching}
           />
-        ) : (
-          <CheckInSettings data={overview.data} />
-        )}
+        ) : null}
+        {overview.data && canKeepCachedRead(overview.error) ? (
+          <CheckInSettings data={overview.data} overview={overview} />
+        ) : null}
         <Activity days={days} metrics={metrics} onDays={setDays} />
       </PageShell>
     </AstryxSurface>
   );
 }
 
-function CheckInSettings({ data }: { data: EnterpriseOverview }) {
+function CheckInSettings({
+  data,
+  overview,
+}: {
+  data: EnterpriseOverview;
+  overview: UseQueryResult<EnterpriseOverview>;
+}) {
   const setCapability = useMutation(setCapabilityMutationOptions(queryClient));
   const setSetting = useMutation(
     setEnterpriseSettingMutationOptions(queryClient),
@@ -190,6 +198,7 @@ function CheckInSettings({ data }: { data: EnterpriseOverview }) {
       Object.keys(capability.groups).length
     : 0;
   const saving = setCapability.isPending || setSetting.isPending;
+  const canWrite = overview.isSuccess && !overview.isFetching;
   const limitTrigger = useRef<HTMLButtonElement>(null);
 
   return (
@@ -226,7 +235,7 @@ function CheckInSettings({ data }: { data: EnterpriseOverview }) {
             <Switch
               aria-label="Check-ins"
               checked={on}
-              disabled={saving}
+              disabled={saving || !canWrite}
               onCheckedChange={(checked) =>
                 setCapability.mutate({
                   scopeKind: "organization",
@@ -242,6 +251,7 @@ function CheckInSettings({ data }: { data: EnterpriseOverview }) {
         <Item
           render={
             <button
+              disabled={!canWrite}
               ref={limitTrigger}
               onClick={() => {
                 setSetting.reset();
@@ -274,6 +284,8 @@ function CheckInSettings({ data }: { data: EnterpriseOverview }) {
       ) : null}
       <DailyLimitDialog
         key={limitSession}
+        canWrite={canWrite}
+        overview={overview}
         error={setSetting.error?.message}
         initial={data.settings.proactiveDailyRuns}
         returnFocus={limitTrigger}
@@ -557,6 +569,8 @@ function Breakdown({
 }
 
 function DailyLimitDialog({
+  canWrite,
+  overview,
   initial,
   onClose,
   onSave,
@@ -565,6 +579,8 @@ function DailyLimitDialog({
   error,
   returnFocus,
 }: {
+  canWrite: boolean;
+  overview: UseQueryResult<EnterpriseOverview>;
   initial: number;
   onClose: () => void;
   onSave: (value: number) => void;
@@ -604,10 +620,20 @@ function DailyLimitDialog({
           className="flex min-h-0 flex-col"
           onSubmit={(event) => {
             event.preventDefault();
-            if (valid && !saving) onSave(parsed);
+            if (valid && !saving && canWrite) onSave(parsed);
           }}
         >
           <DialogBody className="gap-2">
+            {overview.error ? (
+              <ReadError
+                description="Your changes are still here. Retry before saving."
+                focusAfterRetry={() => input.current}
+                message="Couldn't refresh check-in settings."
+                retry={overview.refetch}
+                retryLabel="Retry check-in settings"
+                retrying={overview.isFetching}
+              />
+            ) : null}
             <Label htmlFor="check-in-daily-limit">
               Check-ins a day per Bot, for each person
             </Label>
@@ -642,7 +668,7 @@ function DailyLimitDialog({
               Cancel
             </Button>
             <AstryxButton
-              isDisabled={!valid || saving}
+              isDisabled={!valid || saving || !canWrite}
               label={saving ? "Saving…" : "Save"}
               type="submit"
               variant="primary"

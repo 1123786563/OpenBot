@@ -14,13 +14,23 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { CheckInsSection } from "@/components/settings/check-ins";
 import { ProactiveResearchSettings } from "@/components/suggestions/proactive-panel";
 import { authKeys } from "@/lib/auth/queries";
 import { deploymentKeys } from "@/lib/deployment/queries";
+import { enterpriseKeys } from "@/lib/enterprise/queries";
 import { queryClient } from "@/query-client";
+import { CheckInsPage } from "@/routes/_authed/admin/proactive";
 import { settleReactWork } from "./settle-react-work";
 
 /*
@@ -189,4 +199,69 @@ test("a Bot's own check-ins say an admin turned them off", async () => {
     await view.findByText("Your admin turned off check-ins for you."),
   ).toBeTruthy();
   expect(view.getByText("Every hour · Turned off by your admin")).toBeTruthy();
+});
+
+test("a failed Check-ins settings refresh preserves the daily limit draft until retry succeeds", async () => {
+  let fail = false;
+  const saved: number[] = [];
+  global.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/admin/enterprise") {
+        if (fail) return Response.json({}, { status: 503 });
+        return Response.json({
+          settings: { proactiveDailyRuns: 24 },
+          capabilities: [],
+        });
+      }
+      if (
+        path === "/api/admin/enterprise/settings/proactiveDailyRuns" &&
+        init?.method === "PUT"
+      ) {
+        const { value } = JSON.parse(String(init.body));
+        saved.push(value);
+        return Response.json({ key: "proactiveDailyRuns", value });
+      }
+      return Response.json({}, { status: 404 });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+
+  const view = await draw(<CheckInsPage />);
+  fireEvent.click(await view.findByRole("button", { name: /Daily limit/ }));
+  const dialog = within(
+    await view.findByRole("dialog", { name: "Daily limit" }),
+  );
+  const input = dialog.getByRole("textbox");
+  const save = dialog.getByRole("button", { name: "Save" });
+  const user = userEvent.setup({ document });
+  await user.clear(input);
+  await user.type(input, "36");
+  expect(input).toHaveProperty("value", "36");
+
+  fail = true;
+  await act(async () => {
+    await queryClient.invalidateQueries({
+      queryKey: enterpriseKeys.overview(),
+    });
+  });
+  await dialog.findByText("Your changes are still here. Retry before saving.");
+  expect(input).toHaveProperty("value", "36");
+  expect(save.matches(':disabled, [aria-disabled="true"]')).toBe(true);
+  const form = input.closest("form");
+  if (!form) throw new Error("Expected the daily limit form");
+  fireEvent.submit(form);
+  expect(saved).toEqual([]);
+
+  fail = false;
+  fireEvent.click(
+    dialog.getByRole("button", { name: "Retry check-in settings" }),
+  );
+  await waitFor(() =>
+    expect(save.matches(':disabled, [aria-disabled="true"]')).toBe(false),
+  );
+  expect(input).toHaveProperty("value", "36");
+  fireEvent.click(save);
+  await waitFor(() => expect(saved).toEqual([36]));
+  await waitFor(() => expect(view.queryByRole("dialog")).toBeNull());
 });
