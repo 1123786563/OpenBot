@@ -45,11 +45,12 @@
 
 ```sh
 python3 /opt/persaas/configure-observability.py
-python3 /opt/persaas/configure-lago-usage.py
 python3 /opt/persaas/configure-chat-proxy.py
 python3 /opt/persaas/configure-opik-health.py
 python3 /opt/persaas/archive-panel-config.py
 ```
+
+用量对账配置、切换时点和退役验收见[从 Lago 切换到 Flexprice](../docs/flexprice.md#从-lago-切换)。
 
 Collector 配置来源为 `deploy/openobserve/otel-collector.yaml`，应用节点放置在 `/opt/persaas/otel-collector.yaml`；`collector.env` 从数据节点的私密生成文件安全复制，权限 600，并创建 `runtime-logs` 目录。应用节点使用本目录 `apps.yml`；更新 Runtime 参数后重建 openbot、worker，启动 otel-collector。
 
