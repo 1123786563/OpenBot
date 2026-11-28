@@ -90,8 +90,11 @@ export function RememberFact({
   const [content, setContent] = useState("");
   const formId = useId();
   const opener = useRef<HTMLButtonElement>(null);
+  const receipt = useRef<HTMLParagraphElement>(null);
   const submitting = useRef(false);
   const remember = useMutation(createMemoryMutationOptions(queryClient));
+  const savedMessage =
+    canWrite && remember.isSuccess ? "Memory saved." : undefined;
   return (
     <>
       {canWrite ? (
@@ -112,6 +115,18 @@ export function RememberFact({
           Remember a fact
         </Button>
       ) : null}
+      <Text
+        aria-label={savedMessage}
+        as="p"
+        className={savedMessage ? undefined : "sr-only"}
+        color="secondary"
+        ref={receipt}
+        role="status"
+        size="sm"
+        tabIndex={-1}
+      >
+        {savedMessage}
+      </Text>
       <SettingsDraftDialog
         action={
           <Button
@@ -129,7 +144,11 @@ export function RememberFact({
         guardNavigation={submitting}
         onClose={() => setOpen(false)}
         open={open}
-        opener={() => opener.current ?? fallbackFocus?.() ?? null}
+        opener={() =>
+          (savedMessage ? receipt.current : opener.current) ??
+          fallbackFocus?.() ??
+          null
+        }
         saving={remember.isPending}
         title="Remember a fact"
       >
@@ -183,7 +202,10 @@ export function MemoryList({ description }: { description?: ReactNode } = {}) {
   const memories = useQuery(memoriesQueryOptions());
   const agents = useQuery(agentListQueryOptions());
   const forget = useMutation(deleteMemoryMutationOptions(queryClient));
-  const { requestConfirmation, confirmation } = useActionConfirmation();
+  const { requestConfirmation, confirmation } = useActionConfirmation(
+    undefined,
+    { focusSuccessNotice: true },
+  );
   const denied =
     memories.error instanceof ClientError &&
     (memories.error.status === 401 || memories.error.status === 403);

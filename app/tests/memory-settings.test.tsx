@@ -238,6 +238,7 @@ test("remembering a fact saves it", async () => {
       body: { content: "I work from Lisbon." },
     }),
   );
+  expect(await view.findByText("Memory saved.")).toBeTruthy();
 });
 
 test("leaving a typed fact for another page asks first, and Keep editing keeps the text", async () => {
