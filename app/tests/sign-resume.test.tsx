@@ -821,7 +821,9 @@ test("every provider keeps its own name, in the interface language", async () =>
   expect(
     view.getByRole("button", { name: "Continue with Microsoft" }),
   ).toBeTruthy();
-  expect(view.getByRole("button", { name: "Continue with Casdoor" })).toBeTruthy();
+  expect(
+    view.getByRole("button", { name: "Continue with Casdoor" }),
+  ).toBeTruthy();
 });
 
 /*
