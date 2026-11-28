@@ -92,3 +92,18 @@ Synchronization now excludes database images; backups explicitly retain database
 Infrastructure migrated 23 env files into 468 individual variables across 23 service folders. Multi-file projects use service child folders to isolate duplicate names. Destination values were read back exactly; every A env matched Compose-parsed variables (zero local file changes). Collector was parsed from the existing saved env and migrated into eight individual variables. All old file-valued ENV_* entries were removed after destination verification. Runtime app variables and database exclusions are unchanged.
 
 The sync tool now parses env with Compose and regenerates local env from individual values, escaping literal dollars and quotes. Local checks passed for duplicate-name isolation, database exclusion/backup inclusion, special-value round trips, invalid names, rollback, idempotency, and shared-stack service ownership. No production containers were restarted for this format migration.
+
+## 2026-11-28 — server configuration synchronization and service health
+
+Applied Infrastructure variables to all 22 non-database env files on A; each reported zero differences. Compared the rendered Compose environment against each running non-database service's actual container environment, with no mismatches or recreation needed. The private execution report is `/opt/persaas/config-sync-verification.json` on A.
+
+On B, fetched current Runtime variables through the existing SDK identities and compared them with the actual application child-process environment: API 33/33 and Worker 13/13 matched. Both child processes exclude the bootstrap client secret. Collector's eight variables matched Infrastructure, local Compose and the running container. The application node check and SSH data-link check passed.
+
+Service observations:
+
+- A: 27 persistent containers running, no unhealthy containers, all restart counts zero. Four stopped init/migration containers completed with exit code 0.
+- B: API healthy; Worker and Collector running; all three restart counts zero.
+- Data-node and app-node `check.sh` both exited 0. Main site, Casdoor discovery, Infisical, Bifrost console, Opik, OpenObserve, Lago API, Flexprice console health and CubeSandbox health all returned HTTPS 200.
+- PostgreSQL/pgvector and Lago PostgreSQL readiness passed. MySQL and ClickHouse executed `SELECT 1`. Authenticated Redis PING returned PONG. Both Kafka brokers answered topic-list requests. Temporal at `temporal:7233` reported WorkflowService SERVING. RustFS health and readiness returned 200.
+
+No production restart was required because the current configuration already matches Infisical. Database env remains local-only. These checks establish configuration consistency and service health; they do not replace full business acceptance or close the previously recorded Bifrost inference and Flexprice billing integration items.
