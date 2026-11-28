@@ -364,7 +364,7 @@ test("a check that fails says so, and Check again stays", async () => {
   const view = draw();
 
   expect(
-    await view.findByText("Couldn't check your setup. Check again."),
+    await view.findByText("Couldn't check your setup."),
   ).not.toBeNull();
   expect(view.getByRole("button", { name: "Check again" })).not.toBeNull();
 });
