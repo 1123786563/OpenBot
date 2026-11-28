@@ -286,6 +286,13 @@
   "sign.sso.or": "或",
   "sign.title": "登录",
   "sign.unconfigured": "登录尚未配置。",
+  "tasks.markDone": "标记为完成",
+  "tasks.markDoneDescription": "任务将移至「已解决」。七天内可以在该列表中重新打开任务，原对话仍可访问。",
+  "tasks.markDoneFailed": "无法将任务标记为完成，请重试。",
+  "tasks.markDoneSaving": "正在保存…",
+  "tasks.markDoneStale": "此任务已发生变化。请检查列表后再试。",
+  "tasks.markDoneSuccess": "已将「{title}」标记为完成。可在「已解决」中重新打开。",
+  "tasks.markDoneTitle": "将「{title}」标记为完成？",
   "tasks.retryApprovals": "重新加载审批和问题",
   "tasks.retryTasks": "重新加载任务"
 }
