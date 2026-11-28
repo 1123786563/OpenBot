@@ -172,7 +172,7 @@ function ToolInWords({
     <>
       <ItemTitle className="block w-auto wrap-anywhere">{label}</ItemTitle>
       {summary ? (
-        <ItemDescription className="line-clamp-none wrap-anywhere">
+        <ItemDescription className="line-clamp-none wrap-anywhere text-sm">
           {summary}
         </ItemDescription>
       ) : null}
@@ -1512,7 +1512,7 @@ export function PluginPage({
                           <ItemTitle className="block w-auto wrap-anywhere font-mono text-sm">
                             {tool.name}
                           </ItemTitle>
-                          <ItemDescription className="line-clamp-none wrap-anywhere">
+                          <ItemDescription className="line-clamp-none wrap-anywhere text-sm">
                             {tool.description}
                           </ItemDescription>
                         </>

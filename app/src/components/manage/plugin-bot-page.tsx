@@ -427,7 +427,7 @@ export function PluginBotPage({
           <Item size="sm">
             <ItemContent>
               <ItemTitle className="font-mono text-xs">{tool.name}</ItemTitle>
-              <ItemDescription>
+              <ItemDescription className="text-sm">
                 {tool.description || "This action has no description."}
               </ItemDescription>
             </ItemContent>
