@@ -1,5 +1,5 @@
 import { Button } from "@astryxdesign/core/Button";
-import { type ReactNode, useRef, useState } from "react";
+import { type KeyboardEvent, type ReactNode, useRef, useState } from "react";
 import { astryxScope } from "@/components/astryx-pilot/theme";
 import {
   Dialog,
@@ -46,6 +46,32 @@ type ConfirmationState =
       message: string;
       recovery?: ReactNode;
     };
+
+function wrapConfirmationTab(event: KeyboardEvent<HTMLElement>) {
+  if (event.key !== "Tab" || event.defaultPrevented) return;
+  const dialog = event.currentTarget;
+  const controls = Array.from(
+    dialog.querySelectorAll<HTMLElement>(
+      "a[href], button, input, select, textarea, [tabindex], [contenteditable]",
+    ),
+  ).filter(
+    (control) =>
+      control.tabIndex >= 0 &&
+      !control.matches(":disabled") &&
+      !control.closest("[inert]") &&
+      control.checkVisibility({ visibilityProperty: true }),
+  );
+  const first = controls[0];
+  const last = controls.at(-1);
+  if (!first || !last) {
+    event.preventDefault();
+    return;
+  }
+  const atBoundary = event.shiftKey ? first : last;
+  if (document.activeElement !== atBoundary) return;
+  event.preventDefault();
+  (event.shiftKey ? last : first).focus();
+}
 
 export function useActionConfirmation(
   review?: {
@@ -156,6 +182,7 @@ export function useActionConfirmation(
               );
             }}
             initialFocus={cancelButton}
+            onKeyDown={wrapConfirmationTab}
             overlayClassName={options?.overlayClassName}
             role="alertdialog"
             showCloseButton={false}
