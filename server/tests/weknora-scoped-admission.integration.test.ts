@@ -319,7 +319,8 @@ test("a durable WeKnora grant gates new credit operations and preserves prior se
       "dispatch",
     );
     const admitted = admissions.find(({ state }) => state === "dispatch");
-    if (admitted) await restarted.releaseUnsent(admitted.accountId, "racing");
+    if (admitted?.state === "dispatch")
+      await restarted.releaseUnsent(admitted.accountId, "racing");
     const revokedHoldScope = { ...grant, authorizationId: crypto.randomUUID() };
     await authorizeFresh(revokedHoldScope);
     const revokedHold = await restarted.reserve(identity, {
