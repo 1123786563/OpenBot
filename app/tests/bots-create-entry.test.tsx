@@ -200,6 +200,7 @@ test("Escape and Cancel ask before discarding edited Bot details", async () => {
   );
   await user.click(confirmation.getByRole("button", { name: "Keep editing" }));
   await waitFor(() => expect(view.queryByRole("alertdialog")).toBeNull());
+  await waitFor(() => expect(document.activeElement).toBe(name));
   expect(name).toHaveProperty("value", "Planning Bot");
   expect(view.history.location.search).toBe("?new=true");
 

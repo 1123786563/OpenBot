@@ -112,6 +112,8 @@ export function NewBotSheet({
   const { t } = useTranslation();
   const submitting = useRef(false);
   const hasDraft = useRef(false);
+  const sheet = useRef<HTMLDivElement>(null);
+  const lastEditorFocus = useRef<HTMLElement | null>(null);
   return (
     <Sheet
       onOpenChange={(next, event) => {
@@ -127,6 +129,12 @@ export function NewBotSheet({
     >
       <SheetContent
         finalFocus={finalFocus}
+        onFocusCapture={({ currentTarget, target }) => {
+          if (target instanceof HTMLElement && currentTarget.contains(target)) {
+            lastEditorFocus.current = target;
+          }
+        }}
+        ref={sheet}
         className="gap-0 data-[side=right]:w-[calc(100%-1rem)] data-[side=right]:sm:max-w-2xl"
         showCloseButton={false}
         side="right"
@@ -144,6 +152,13 @@ export function NewBotSheet({
               "bots.create.discardDescription",
               "Your Bot details and connection settings will be lost.",
             )}
+            finalFocus={() => {
+              if (!open) return false;
+              const editor = lastEditorFocus.current;
+              return editor && sheet.current?.contains(editor)
+                ? editor
+                : sheet.current;
+            }}
             hasDraft={hasDraft}
             leavesDraft={leavesDraft}
             saving={false}
