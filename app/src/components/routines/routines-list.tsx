@@ -216,7 +216,7 @@ function RoutineRuns({
           const status = RUN_STATUS[run.status] ?? RUN_STATUS.skipped;
           return (
             <li
-              className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs"
+              className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm"
               key={run.id}
             >
               <span
