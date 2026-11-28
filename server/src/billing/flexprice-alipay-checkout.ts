@@ -8,6 +8,7 @@ import {
   flexpriceInvoiceNotification,
   flexpriceQRChannel,
 } from "./flexprice-alipay-client";
+import { createFlexpricePackRefundReconciliation } from "./flexprice-pack-refund";
 import { type PaidCreditLedger, PaidLedgerError } from "./paid-ledger";
 import type { TestCreditLedger, VerifiedBillingIdentity } from "./test-credit";
 
@@ -361,7 +362,12 @@ export function createFlexpriceAlipaySweep({
     paid,
     createFlexpriceAlipayClient(settings),
   );
+  const reconcileRefund = createFlexpricePackRefundReconciliation(
+    paid,
+    settings,
+  );
   let after: string | undefined;
+  let afterRefund: string | undefined;
   return async () => {
     const orders = await paid.pendingFlexpriceOrders(after);
     for (let offset = 0; offset < orders.length; offset += 5)
@@ -375,5 +381,18 @@ export function createFlexpriceAlipaySweep({
         }),
       );
     after = orders.at(-1)?.id;
+
+    const refunds = await paid.pendingAutomaticFlexpriceRefunds(afterRefund);
+    for (let offset = 0; offset < refunds.length; offset += 5)
+      await Promise.all(
+        refunds.slice(offset, offset + 5).map(async (refund) => {
+          try {
+            await reconcileRefund(refund, "automatic");
+          } catch (error) {
+            onError(refund.orderId, error);
+          }
+        }),
+      );
+    afterRefund = refunds.at(-1)?.orderId;
   };
 }
