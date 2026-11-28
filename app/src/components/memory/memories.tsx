@@ -202,7 +202,10 @@ export function MemoryList({ description }: { description?: ReactNode } = {}) {
   const memories = useQuery(memoriesQueryOptions());
   const agents = useQuery(agentListQueryOptions());
   const forget = useMutation(deleteMemoryMutationOptions(queryClient));
-  const { requestConfirmation, confirmation } = useActionConfirmation();
+  const { requestConfirmation, confirmation } = useActionConfirmation(
+    undefined,
+    { focusSuccessNotice: true },
+  );
   const denied =
     memories.error instanceof ClientError &&
     (memories.error.status === 401 || memories.error.status === 403);
@@ -346,7 +349,6 @@ export function MemoryList({ description }: { description?: ReactNode } = {}) {
                     pendingLabel: "Forgetting…",
                     failureMessage: "Couldn't forget this memory. Try again.",
                     successMessage: "Memory forgotten.",
-                    focusSuccessNotice: true,
                     trigger,
                     fallbackFocus: () =>
                       searchInput.current ??

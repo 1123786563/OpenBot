@@ -35,7 +35,6 @@ type Confirmation = {
   fallbackFocus?: (() => HTMLElement | null) | undefined;
   variant?: "default" | "destructive";
   successMessage?: string;
-  focusSuccessNotice?: boolean;
   refresh?: () => Promise<unknown>;
 };
 
@@ -81,7 +80,7 @@ export function useActionConfirmation(
     ready: boolean;
     onClose: () => void;
   },
-  options?: { overlayClassName: string },
+  options?: { overlayClassName?: string; focusSuccessNotice?: boolean },
 ) {
   const { t } = useTranslation();
   const [state, setState] = useState<ConfirmationState | null>(null);
@@ -150,11 +149,12 @@ export function useActionConfirmation(
     requestConfirmation,
     confirmation: (
       <>
-        {/* Only once there is something to say: an ever-present empty status line answers
-            screen-reader and test queries for "the status" before the real notice exists. */}
-        {notice ? (
+        {notice || options?.focusSuccessNotice ? (
           <p
-            aria-label={action?.focusSuccessNotice ? notice : undefined}
+            aria-label={
+              options?.focusSuccessNotice && notice ? notice : undefined
+            }
+            className={notice ? undefined : "sr-only"}
             ref={status}
             role="status"
             tabIndex={-1}
@@ -178,7 +178,7 @@ export function useActionConfirmation(
             {...astryxScope}
             className="break-words"
             finalFocus={() => {
-              if (remembered.current?.focusSuccessNotice && status.current)
+              if (options?.focusSuccessNotice && notice && status.current)
                 return status.current;
               const opener = remembered.current?.trigger;
               if (
