@@ -125,9 +125,15 @@ async function startCube() {
     },
     { policyForBot: async () => undefined, serialize: (_id, run) => run() },
   );
-  if (!browser) throw new Error("The Cube browser provider did not start.");
+  if (!browser?.stop) {
+    await cube.stop(true);
+    throw new Error(
+      "The Cube browser provider did not expose lifecycle controls.",
+    );
+  }
   return {
     browser,
+    stopBrowser: browser.stop.bind(browser),
     calls,
     creates,
     connects,
@@ -182,7 +188,7 @@ describe("a person's browser on CubeSandbox", () => {
     const cube = await startCube();
     try {
       await cube.browser.locate(seat);
-      await cube.browser.stop(seat);
+      await cube.stopBrowser(seat);
       cube.calls.length = 0;
       await expect(cube.browser.locate(seat)).resolves.toBe(
         cube.sandboxAddress,
@@ -207,7 +213,7 @@ describe("a person's browser on CubeSandbox", () => {
     try {
       await cube.browser.locate(seat);
       cube.madeBeforeThisChange();
-      await cube.browser.stop(seat);
+      await cube.stopBrowser(seat);
       await expect(cube.browser.locate(seat)).resolves.toBe(
         cube.sandboxAddress,
       );
@@ -314,7 +320,7 @@ describe("a person's browser on CubeSandbox", () => {
     const cube = await startCube();
     try {
       await cube.browser.locate(seat);
-      await cube.browser.stop(seat);
+      await cube.stopBrowser(seat);
       cube.refuseResume();
       cube.calls.length = 0;
       await expect(cube.browser.locate(seat)).rejects.toThrow(
@@ -334,7 +340,7 @@ describe("a person's browser on CubeSandbox", () => {
     try {
       await cube.browser.locate(seat);
       cube.calls.length = 0;
-      await expect(cube.browser.stop(seat)).resolves.toBe(true);
+      await expect(cube.stopBrowser(seat)).resolves.toBe(true);
       expect(cube.calls).toEqual([
         "GET /sandboxes",
         "POST /sb-1/computers/stop-all",
@@ -351,7 +357,7 @@ describe("a person's browser on CubeSandbox", () => {
       await cube.browser.locate(seat);
       cube.closeBrowsers();
       cube.calls.length = 0;
-      await expect(cube.browser.stop(seat)).resolves.toBe(false);
+      await expect(cube.stopBrowser(seat)).resolves.toBe(false);
       expect(cube.calls).toEqual([
         "GET /sandboxes",
         "POST /sb-1/computers/stop-all",
@@ -368,7 +374,7 @@ describe("a person's browser on CubeSandbox", () => {
       await cube.browser.locate(seat);
       cube.refusePause(409);
       cube.calls.length = 0;
-      await expect(cube.browser.stop(seat)).resolves.toBe(true);
+      await expect(cube.stopBrowser(seat)).resolves.toBe(true);
       expect(cube.calls).toEqual([
         "GET /sandboxes",
         "POST /sb-1/computers/stop-all",
@@ -384,7 +390,7 @@ describe("a person's browser on CubeSandbox", () => {
     try {
       await cube.browser.locate(seat);
       cube.refusePause(500);
-      await expect(cube.browser.stop(seat)).rejects.toThrow(
+      await expect(cube.stopBrowser(seat)).rejects.toThrow(
         "CubeSandbox browser API answered 500.",
       );
     } finally {
@@ -396,9 +402,9 @@ describe("a person's browser on CubeSandbox", () => {
     const cube = await startCube();
     try {
       await cube.browser.locate(seat);
-      await cube.browser.stop(seat);
+      await cube.stopBrowser(seat);
       cube.calls.length = 0;
-      await expect(cube.browser.stop(seat)).resolves.toBe(false);
+      await expect(cube.stopBrowser(seat)).resolves.toBe(false);
       expect(cube.calls).toEqual(["GET /sandboxes"]);
     } finally {
       await cube.close();
@@ -411,7 +417,7 @@ describe("a person's browser on CubeSandbox", () => {
       await cube.browser.locate(seat);
       cube.pausing();
       cube.calls.length = 0;
-      await expect(cube.browser.stop(seat)).resolves.toBe(false);
+      await expect(cube.stopBrowser(seat)).resolves.toBe(false);
       expect(cube.calls).toEqual(["GET /sandboxes"]);
     } finally {
       await cube.close();
@@ -422,7 +428,7 @@ describe("a person's browser on CubeSandbox", () => {
     const cube = await startCube();
     try {
       await cube.browser.locate(seat);
-      await cube.browser.stop(seat);
+      await cube.stopBrowser(seat);
       expect(await cube.browser.status(seat)).toEqual({
         botId: seat.botId,
         state: "absent",
