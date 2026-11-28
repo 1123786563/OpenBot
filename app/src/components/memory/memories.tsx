@@ -112,6 +112,15 @@ export function RememberFact({
           Remember a fact
         </Button>
       ) : null}
+      <Text
+        as="p"
+        className={canWrite && remember.isSuccess ? undefined : "sr-only"}
+        color="secondary"
+        role="status"
+        size="sm"
+      >
+        {canWrite && remember.isSuccess ? "Memory saved." : null}
+      </Text>
       <SettingsDraftDialog
         action={
           <Button
