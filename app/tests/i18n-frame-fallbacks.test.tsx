@@ -381,6 +381,18 @@ test("the failed-load screen never prints the error it was given", async () => {
   await view.findByRole("heading", { name: "This page couldn’t load" });
   expect(view.queryByText(/postgres/)).toBeNull();
   expect(view.queryByText(/secret/)).toBeNull();
+  expect(view.queryByText(/WEB-ROUTE-ERROR/)).toBeNull();
+
+  const user = userEvent.setup({ document });
+  await user.click(view.getByRole("button", { name: "Try again" }));
+  await view.findByText(
+    "If you contact support, include code WEB-ROUTE-ERROR.",
+  );
+  expect(view.queryByText(/postgres/)).toBeNull();
+  expect(view.queryByText(/secret/)).toBeNull();
+
+  await pinLocale("zh-CN");
+  await view.findByText("联系支持人员时，请提供故障代码 WEB-ROUTE-ERROR。");
 });
 
 test("Open workspace moves focus to the page it opens", async () => {
