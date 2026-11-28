@@ -50,3 +50,11 @@ with tempfile.TemporaryDirectory() as directory:
     assert m.apply_env(shared, {key: 'TOKEN="new-flex"' for key in flex}, True, 'flexprice') == 1
     assert (runtime / 'temporal.env').read_text() == before_temporal
     print('PASS shared-stack middleware folders update only their own env file')
+
+    database = root / 'database.env'
+    database.write_text('POSTGRES_PASSWORD="fixture"\n')
+    mixed = root / 'mixed.yml'
+    mixed.write_text('services:\n  api:\n    image: example/app:1\n    env_file: probe.env\n  database:\n    image: getlago/postgres-partman:15.0-alpine\n    env_file: database.env\n')
+    assert list(m.env_files(mixed).values()) == [env]
+    assert set(m.env_files(mixed, include_databases=True).values()) == {env, database}
+    print('PASS embedded database env excluded from vault but retained for backup')

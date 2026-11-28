@@ -78,3 +78,10 @@ Bifrost JSON 已删除 providers/auth_config，setup token 从 env 注入，容�
 - Local middleware verification: five checks passed, including independent Flexprice/Temporal updates within the shared Compose file. Shell syntax validation passed.
 
 This verifies configuration migration and service availability. It does not supersede the unresolved business acceptance items recorded above.
+
+
+## 2026-11-28 — exclude database container configuration
+
+User narrowed vault scope again: database service env is local-only. Removed five entries (ClickHouse, MySQL, pgvector/PostgreSQL, Redis, and embedded Lago PostgreSQL) and four empty folders from Infrastructure. Current inventory is 13 folders/23 env entries, including B Collector; A checks passed with zero differences across 12 folders/22 files. No database files were deleted and no containers were restarted. Client connection variables remain in application/middleware env.
+
+Synchronization now excludes database images; backups explicitly retain database env discovery. Six local Compose checks pass, including an embedded Lago database exclusion and backup inclusion check. Shell syntax validation passed.

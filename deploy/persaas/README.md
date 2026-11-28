@@ -34,7 +34,7 @@ API 和 Worker 使用 Runtime 只读机器身份，不能读取 Infrastructure�
 
 新增 Bifrost、Opik、Lago、MySQL 以及 Flexprice 控制台的入口、配置归档和维护步骤见 [中间件指南](extensions/README.md)。
 
-全量中间件配置的目录、上传、差异检查和下发流程见 [Infisical 中间件管理](INFISICAL-MIDDLEWARE.md)。已按用户确认收窄为 env 文件：A 的 16 个中间件目录、27 份 env 已同步；另有 B 的 Collector env。Runtime 仅保留应用目录，旧目录与非 env 项已清理。
+全量中间件配置的目录、上传、差异检查和下发流程见 [Infisical 中间件管理](INFISICAL-MIDDLEWARE.md)。已按用户确认收窄为 env 文件：A 的 12 个中间件目录、22 份非数据库 env 已同步；另有 B 的 Collector env。Runtime 仅保留应用目录。数据库服务自身 env 不上传，应用连接数据库所需的变量仍保留；旧目录与非 env 项已清理。
 
 ## Redis 当前方案
 

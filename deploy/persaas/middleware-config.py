@@ -106,10 +106,17 @@ def definition(compose, unresolved=False):
     return json.loads(run(*args, cwd=compose.parent))
 
 
-def env_files(compose, project=None):
+def database_service(service):
+    image = service.get('image', '').split('@')[0].rsplit('/', 1)[-1].split(':')[0]
+    return image in {'postgres', 'postgres-partman', 'pgvector', 'mysql', 'mariadb', 'clickhouse-server', 'redis', 'valkey', 'mongo', 'mongodb'}
+
+
+def env_files(compose, project=None, include_databases=False):
     paths = set()
     selected = ROOT / 'runtime' / (str(project) + '.env') if project in ('flexprice', 'temporal') else None
     for service in definition(compose, True)['services'].values():
+        if not include_databases and database_service(service):
+            continue
         for item in service.get('env_file', []):
             path = Path(item['path'] if isinstance(item, dict) else item)
             # Each shared-stack env belongs to its middleware folder.

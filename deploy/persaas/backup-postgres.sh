@@ -19,7 +19,7 @@ docker exec -u 0 persaas-lago-api cat /lago-secrets/keys.json > "$tmp/lago-secre
 python3 - <<'PYENV' > "$tmp/middleware-env.paths"
 import runpy
 m = runpy.run_path('/opt/persaas/middleware-config.py')
-paths = {path for name, compose in m['projects']().items() for path in m['env_files'](compose, name).values()}
+paths = {path for name, compose in m['projects']().items() for path in m['env_files'](compose, name, include_databases=True).values()}
 for path in sorted(paths):
     print(path.relative_to('/opt'))
 PYENV

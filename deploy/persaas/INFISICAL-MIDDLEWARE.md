@@ -1,14 +1,16 @@
 # 仅管理容器环境变量
 
-2026-11-28 已在 A（129.28.39.52）完成：16 个中间件目录，共 27 份 A 节点容器实际引用的 env 文件，已写入 **Persaas Infrastructure → prod** 并逐项读回一致。差异检查均为 0。Compose、证书、配置文件和管理员凭据目录已从此次集中配置中移除，服务器原文件保留。
+2026-11-28 已在 A（129.28.39.52）完成：12 个中间件目录，共 22 份 A 节点容器实际引用的非数据库 env 文件，已写入 **Persaas Infrastructure → prod** 并逐项读回一致。差异检查均为 0。Compose、证书、配置文件和管理员凭据目录已从此次集中配置中移除，服务器原文件保留。
 
 **Persaas Runtime → prod 只保留 `/server`、`/worker`**，分别保存 OpenBot API 和 Worker 的应用配置。Flexprice、Temporal 已迁入 **Persaas Infrastructure → prod** 的 `/flexprice`、`/temporal`，每个目录保存对应 `runtime/<服务>.env` 的全文。目录名 `runtime/` 是本地文件路径，不代表 Infisical 项目归属。应用连接中间件所需的 URL、密钥仍属于应用配置，保留在 Runtime。
 
-Infrastructure 另有 `/collector`，保存 B 节点 OpenTelemetry Collector 的 env 文件；合计 17 个目录、28 份 env。已删除 Runtime 中 8 个旧中间件目录、Infrastructure 的 5 个无用目录和旧同步身份配置。Compose、JSON、证书、模型、管理员账号清单均不存入这两个项目的容器 env 管理目录。清理前的恢复备份仅在 A 的 root 私有 `/opt/persaas/backups/project-boundary-<时间>/` 中保留。
+Infrastructure 另有 `/collector`，保存 B 节点 OpenTelemetry Collector 的 env 文件；合计 13 个目录、23 份 env。已删除 Runtime 中 8 个旧中间件目录、Infrastructure 的 5 个无用目录和旧同步身份配置。Compose、JSON、证书、模型、管理员账号清单均不存入这两个项目的容器 env 管理目录。清理前的恢复备份仅在 A 的 root 私有 `/opt/persaas/backups/project-boundary-<时间>/` 中保留。
+
+数据库服务自身的 env 不存入 Infisical：已移除 MySQL、ClickHouse、pgvector/PostgreSQL、Redis 的目录，以及 `/lago` 中数据库容器的 env。应用和中间件作为数据库客户端所需的连接变量继续保留。同步工具按容器镜像排除数据库服务，后续 `push` 不会重新上传；数据库本地 env 文件和私有备份保留，备份发现仍包含数据库 env。
 
 ## 在 Infisical 中修改
 
-Infrastructure 的目录对应 Compose 项目名，例如 `/bifrost`、`/casdoor`、`/mysql`、`/redis`、`/opik`、`/lago`、`/kafka`、`/persaas-kafka`、`/rustfs`。每个 `ENV_<文件名>_<路径摘要>` 键保存一份 env 文件的文本，直接编辑其中的 `NAME=value`。没有容器 env_file 的项目不创建空目录。
+Infrastructure 的目录对应 Compose 项目名，例如 `/bifrost`、`/casdoor`、`/opik`、`/lago`、`/kafka`、`/persaas-kafka`、`/rustfs`。每个 `ENV_<文件名>_<路径摘要>` 键保存一份 env 文件的文本，直接编辑其中的 `NAME=value`。没有容器 env_file 的项目不创建空目录。
 
 容器环境已整理到各应用原目录的 `.container-<服务名>.env`，Compose 通过 `env_file` 读取；整理前后完整的 Compose 展开结果比较一致。1Panel 的项目 `.env` 仍保留给面板参数使用，但不会因“默认存在”就上传，只有被服务明确声明为 env_file 的文件才纳入管理。
 
@@ -49,4 +51,4 @@ python3 /opt/persaas/middleware-config.py apply --project bifrost --restart
 python3 deploy/persaas/tests/test_middleware_config.py
 ```
 
-需要 Docker Compose。覆盖只采集实际引用的 env、拒绝非 env 项、无效 dotenv 恢复、有效修改重复下发，以及共享 Compose 中 Flexprice/Temporal 的独立下发。生产环境 A 的 16 个中间件目录、27 份 env 差异均为 0；另保留 Infrastructure `/collector` 的 1 份 B 节点 env。
+需要 Docker Compose。覆盖只采集实际引用的 env、拒绝非 env 项、无效 dotenv 恢复、有效修改重复下发，以及共享 Compose 中 Flexprice/Temporal 的独立下发。生产环境 A 的 12 个中间件目录、22 份 env 差异均为 0；另保留 Infrastructure `/collector` 的 1 份 B 节点 env。
