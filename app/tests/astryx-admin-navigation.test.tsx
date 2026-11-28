@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   createMemoryHistory,
   createRootRoute,
@@ -10,9 +11,10 @@ import {
 import { cleanup, render, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { searchAdminSettings } from "@/components/admin/admin-navigation";
-import { pinLocale } from "./i18n";
+import { sharedUseKeys } from "@/lib/plugins/shared-use";
 import { Route as OverviewRoute } from "@/routes/_authed/admin/index";
 import { Route as AdminRoute } from "@/routes/_authed/admin/route";
+import { pinLocale } from "./i18n";
 import { settleReactWork } from "./settle-react-work";
 
 beforeAll(() => {
@@ -206,7 +208,34 @@ test("overview search offers examples and preserves keyboard focus through navig
     history,
   });
   await router.load();
-  const view = render(<RouterProvider router={router} />);
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  });
+  queryClient.setQueryData(sharedUseKeys.requests(), [
+    { id: "pending-request" },
+  ]);
+  const view = render(
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  );
+  const headings = view
+    .getAllByRole("heading")
+    .map((heading) => heading.textContent);
+  expect(headings.slice(0, 4)).toEqual([
+    "Admin",
+    "Needs attention",
+    "Common tasks",
+    "Routines",
+  ]);
+  const pending = view.getByRole("link", {
+    name: "Shared account requests. 1 request needs review.",
+  });
+  expect(pending.textContent).toContain("1 request needs review.");
+  expect(pending.getAttribute("href")).toBe(
+    "/admin/approvals#shared-account-requests",
+  );
+
   const user = userEvent.setup({ document });
   const search = within(
     view.getByRole("region", { name: "Search admin settings" }),
