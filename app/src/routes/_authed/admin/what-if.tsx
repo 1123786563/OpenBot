@@ -101,7 +101,13 @@ function WhatIfPage() {
     null,
   );
   const [checkProblem, setCheckProblem] = useState<string | null>(null);
+  const askTrigger = useRef<HTMLButtonElement>(null);
   const questionInput = useRef<HTMLInputElement>(null);
+  const accessAlert = useRef<HTMLDivElement>(null);
+  const setAccessAlert = useCallback((alert: HTMLDivElement | null) => {
+    accessAlert.current = alert;
+  }, []);
+  const focusAccessAlert = useRef(false);
   const actionHeading = useRef<HTMLHeadingElement>(null);
   const resultHeading = useRef<HTMLHeadingElement>(null);
   const checkTrigger = useRef<HTMLButtonElement | null>(null);
@@ -155,6 +161,17 @@ function WhatIfPage() {
 
   useLayoutEffect(() => {
     if (accessLost) {
+      if (focusAccessAlert.current) {
+        focusAccessAlert.current = false;
+        const previousFocus = document.activeElement;
+        requestAnimationFrame(() => {
+          if (
+            document.activeElement === previousFocus ||
+            document.activeElement === document.body
+          )
+            accessAlert.current?.focus();
+        });
+      }
       resetScenario();
       forgetLink();
     } else if (linkedAction.current !== search.action) {
@@ -165,7 +182,8 @@ function WhatIfPage() {
 
   const stillAuthorized = () =>
     queryClient.getQueryData(whatIfKeys.vocabulary) !== null;
-  const revokeScenario = () => {
+  const revokeScenario = (restoreFocus: boolean) => {
+    focusAccessAlert.current = restoreFocus;
     void queryClient.cancelQueries(
       { queryKey: whatIfKeys.vocabulary, exact: true },
       { revert: false },
@@ -220,7 +238,12 @@ function WhatIfPage() {
       }
     } catch (thrown) {
       if (request.current?.controller !== controller) return;
-      if (isWhatIfAccessDenied(thrown)) revokeScenario();
+      if (isWhatIfAccessDenied(thrown))
+        revokeScenario(
+          document.activeElement === askTrigger.current ||
+            document.activeElement === questionInput.current ||
+            document.activeElement === document.body,
+        );
       else if (stillAuthorized())
         setAskProblem(
           thrown instanceof Error
@@ -264,7 +287,8 @@ function WhatIfPage() {
       }
     } catch (thrown) {
       if (request.current?.controller !== controller) return;
-      if (isWhatIfAccessDenied(thrown)) revokeScenario();
+      if (isWhatIfAccessDenied(thrown))
+        revokeScenario(document.activeElement === trigger);
       else if (stillAuthorized())
         setCheckProblem(
           thrown instanceof Error
@@ -316,6 +340,7 @@ function WhatIfPage() {
           <InputGroupAddon align="inline-end">
             <InputGroupButton
               aria-disabled={asking || undefined}
+              ref={askTrigger}
               disabled={!question || checking || !vocabularyReady}
               size="sm"
               type="submit"
@@ -403,6 +428,7 @@ function WhatIfPage() {
         >
           {accessLost || vocabulary.isError ? (
             <ReadError
+              alertRef={accessLost ? setAccessAlert : undefined}
               message={
                 accessLost
                   ? "Policy testing access is unavailable."

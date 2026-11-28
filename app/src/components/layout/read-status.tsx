@@ -21,6 +21,7 @@ export function ReadStatus(status: ReadStatusProps) {
 }
 
 export function ReadError({
+  alertRef,
   message,
   description,
   retry,
@@ -29,6 +30,7 @@ export function ReadError({
   retryBelow = false,
   focusAfterRetry,
 }: {
+  alertRef?: ((alert: HTMLDivElement | null) => void) | undefined;
   message: string;
   description?: string;
   retry?: (() => unknown) | undefined;
@@ -133,6 +135,16 @@ export function ReadError({
       description={description}
       endContent={retryBelow ? undefined : action}
       collapsible={false}
+      ref={
+        alertRef
+          ? (frame) => {
+              const alert =
+                frame?.querySelector<HTMLDivElement>('[role="alert"]') ?? null;
+              if (alert) alert.tabIndex = -1;
+              alertRef(alert);
+            }
+          : undefined
+      }
       role="alert"
       status="error"
       title={message}

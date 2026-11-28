@@ -325,7 +325,9 @@ test("a denied question clears the old result and a failed retry cannot reopen t
     "/api/admin/what-if/ask": new Response(null, { status: 403 }),
   });
   await user.click(view.getByRole("button", { name: /^Ask$/ }));
-  await view.findByText("Policy testing access is unavailable.");
+  const alert = await view.findByRole("alert");
+  expect(alert.textContent).toContain("Policy testing access is unavailable.");
+  await waitFor(() => expect(document.activeElement).toBe(alert));
   expect(input).toHaveProperty("value", "");
   expect(input).toHaveProperty("disabled", true);
   expect(view.queryByRole("heading", { name: "What happens" })).toBeNull();
