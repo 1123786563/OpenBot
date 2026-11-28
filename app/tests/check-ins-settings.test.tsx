@@ -233,7 +233,7 @@ test("a failed Check-ins settings refresh preserves the daily limit draft until 
     await view.findByRole("dialog", { name: "Daily limit" }),
   );
   const input = dialog.getByRole("textbox");
-  const save = dialog.getByRole("button", { name: "Save", exact: true });
+  const save = dialog.getByRole("button", { name: "Save" });
   const user = userEvent.setup({ document });
   await user.clear(input);
   await user.type(input, "36");
