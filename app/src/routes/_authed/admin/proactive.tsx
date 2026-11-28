@@ -125,6 +125,9 @@ const skipped = (bot: BotCheckInMetrics) =>
 export function CheckInsPage() {
   const overview = useQuery(enterpriseOverviewQueryOptions());
   const settingsHeading = useRef<HTMLHeadingElement>(null);
+  const settings = canKeepCachedRead(overview.error)
+    ? overview.data
+    : undefined;
   const [days, setDays] = useState<Days>(7);
   /*
    * The previous window's numbers stay up while the other loads, so switching between 7 and 30 days
@@ -157,7 +160,7 @@ export function CheckInsPage() {
               </Item>
             </PageRows>
           </div>
-        ) : overview.error || !overview.data ? (
+        ) : !settings ? (
           <ReadError
             focusAfterRetry={() => settingsHeading.current}
             message="Couldn't load check-in settings."
@@ -165,8 +168,8 @@ export function CheckInsPage() {
             retrying={overview.isFetching}
           />
         ) : null}
-        {overview.data && canKeepCachedRead(overview.error) ? (
-          <CheckInSettings data={overview.data} overview={overview} />
+        {settings ? (
+          <CheckInSettings data={settings} overview={overview} />
         ) : null}
         <Activity days={days} metrics={metrics} onDays={setDays} />
       </PageShell>
@@ -200,6 +203,7 @@ function CheckInSettings({
   const saving = setCapability.isPending || setSetting.isPending;
   const canWrite = overview.isSuccess && !overview.isFetching;
   const limitTrigger = useRef<HTMLButtonElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
 
   return (
     <PageSection
@@ -213,8 +217,18 @@ function CheckInSettings({
           .
         </>
       }
+      headingRef={heading}
       title="Settings"
     >
+      {overview.error && !limitOpen ? (
+        <ReadError
+          focusAfterRetry={() => heading.current}
+          message="Couldn't refresh check-in settings."
+          retry={overview.refetch}
+          retryLabel="Retry check-in settings"
+          retrying={overview.isFetching}
+        />
+      ) : null}
       <PageRows>
         <Item size="sm">
           <ItemMedia variant="icon">
@@ -222,7 +236,7 @@ function CheckInSettings({
           </ItemMedia>
           <ItemContent>
             <ItemTitle>Check-ins</ItemTitle>
-            <ItemDescription>
+            <ItemDescription className="line-clamp-none text-sm">
               {on
                 ? "Bots check in for everybody."
                 : "Off. No Bot checks in for anybody."}
@@ -268,7 +282,7 @@ function CheckInSettings({
           </ItemMedia>
           <ItemContent>
             <ItemTitle>Daily limit</ItemTitle>
-            <ItemDescription>
+            <ItemDescription className="line-clamp-none text-sm">
               {`Up to ${plural(data.settings.proactiveDailyRuns, "check-in", "check-ins")} a day per Bot for each person`}
             </ItemDescription>
           </ItemContent>
@@ -377,7 +391,7 @@ function Activity({
               </ItemMedia>
               <ItemContent>
                 <ItemTitle>Check-ins sent</ItemTitle>
-                <ItemDescription>
+                <ItemDescription className="line-clamp-none text-sm">
                   {metrics.data.pings.itemsPerPing === null
                     ? "Each one folds a person's waiting items from every Bot into one message."
                     : `Each one carries an average of ${itemCount(metrics.data.pings.itemsPerPing)}.`}
@@ -431,7 +445,7 @@ function BotRow({
       </ItemMedia>
       <ItemContent>
         <ItemTitle>{bot.name}</ItemTitle>
-        <ItemDescription>
+        <ItemDescription className="line-clamp-none text-sm">
           {[
             plural(bot.peopleOn, "person", "people"),
             plural(ran(bot), "check-in", "check-ins"),
@@ -630,6 +644,7 @@ function DailyLimitDialog({
                 focusAfterRetry={() => input.current}
                 message="Couldn't refresh check-in settings."
                 retry={overview.refetch}
+                retryBelow
                 retryLabel="Retry check-in settings"
                 retrying={overview.isFetching}
               />
