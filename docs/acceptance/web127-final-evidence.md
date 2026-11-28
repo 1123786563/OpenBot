@@ -22,6 +22,10 @@ Playground 异常来自 Playwright 的 Service Worker 拦截脚本。该脚本�
 
 集成提交 `954600c7a` 补齐剩余模拟端点后，使用同一个 `87e7b5876` 生产构建复跑全量。360 个页面样本完成采集，63 个书签均匹配目的地，API 501、页面异常和文档级横向溢出均为 0。四个 Playground 样本均通过预览和沙箱检查。未登录样本的 `GET /api/me` 按预期返回 401。接口和 Playground 的 24 项定向测试通过。证据在 `~/.local/state/openbot-spec-127/evidence/full-fixture.R4ZED5/` 的 `summary.json` 和 `sweep/run.json`。全量走查现在对遇到的 501 直接报错。真实环境验收按要求挂起，正式验收维持 0/88。
 
+## 路由恢复构建的文字对比抽样
+
+构建 `11314d882` 的 423 个 Chromium 样本通过全量走查。脚本记录了可测量的可见告警与链接文字。暗色 1,040 次测量的最低对比度为 6.37:1，浅色最低为 5.58:1。测量限于前景和最近的纯色不透明背景，排除透明文字、渐变和叠层。原始数值位于 `~/.local/state/openbot-spec-127/evidence/route-recovery.cRo2UM/full-contrast/run.json`。正式独立评分仍待验。
+
 ## 2026-11-28 Chromium 全量复跑
 
 Web 构建提交为 `ccca02100ed6f9eb68321eb03541053553c04449`，入口 HTML 的 SHA-256 为 `eb353cf054f1bb1c114cfc7e3013ef160ec4d60a445102af1fd5cbc266726dae`。首次走查发现模拟 API 缺少 `GET /api/computers/pilot`。补齐未启用时的 `{ lifecycle: null }` 响应后，用同一构建重跑。360 个页面样本和 63 个书签组合均完成，页面异常、文档级横向溢出、未实现接口和目的地不匹配均为 0。原始矩阵和截图位于 `~/.local/state/openbot-spec-127/evidence/current-acceptance.z62MJZ/full-sweep-pilot/`。
