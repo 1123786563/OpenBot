@@ -28,6 +28,8 @@ Playground 异常来自 Playwright 的 Service Worker 拦截脚本。该脚本�
 
 `PATCH /api/settings/preferences` 只接受 `openbot` 作为 skin。退役值返回 400，混合请求中的其他变更也不生效。既有 PostgreSQL 行即使存有 `openduet`，读出和更新其他偏好后的响应均为 `openbot`，数据库继续保留兼容值。
 
+#193 使用构建提交 `ccca02100` 复跑了旧书签、登录回跳和认证客户端测试，共 126 项通过。模拟 Team 成员从 `/s/goals?agent=expenses` 发起登录后，目标路径仍保留原地址。恢复已登录会话后，路由到达 `/responsibilities?agent=expenses&view=goals`。真实身份提供者回调和账号角色降级仍待验证。 [书签测试](../../app/tests/legacy-bookmarks.test.tsx) [登录回跳测试](../../app/tests/sign-resume.test.tsx)
+
 ## 设计判断
 
 `design.md` 记录一名评审对两项共享恢复画面的 H1–H10 观察。两个画面分别展示地址失效和页面加载失败，首要动作与焦点环可见。完整任务状态与第二名独立评审仍待验证。表中「待」代表当前构建缺少可打分的完整任务证据。「–」表示 H7 效率项按既有口径不适用。
