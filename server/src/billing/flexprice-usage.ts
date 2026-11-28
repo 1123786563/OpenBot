@@ -12,7 +12,7 @@ type FlexpriceUsageClient = {
   verifyDestination?(): Promise<void>;
   send(
     event: SettledUsageProjection,
-  ): Promise<"matched" | "missing" | "mismatch" | "rejected">;
+  ): Promise<"matched" | "missing" | "pending" | "mismatch" | "rejected">;
 };
 
 const settings = z.object({
@@ -73,7 +73,7 @@ export function createFlexpriceUsageExporter(
     const result = event.eventId.startsWith("lago:")
       ? "rejected"
       : await client.send(event);
-    if (result === "missing") return result;
+    if (result === "missing" || result === "pending") return result;
     await database
       .update(flexpriceUsageDeliveries)
       .set({
