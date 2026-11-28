@@ -650,3 +650,51 @@ test("Tasks names each retry and only reloads the corresponding request", async 
   cleanup();
   client.clear();
 });
+
+test("Tasks asks before marking work done and recovers a lost response without writing twice", async () => {
+  tasks = [
+    task({ id: "a", title: "Review notes", status: "ready_for_review" }),
+  ];
+  serving();
+  const fixtureFetch = global.fetch;
+  global.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const response = await fixtureFetch(input, init);
+      if (String(input) === "/api/tasks/a/resolve") {
+        return Response.json({}, { status: 503 });
+      }
+      return response;
+    },
+    { preconnect: fixtureFetch.preconnect },
+  );
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const router = createRouter({
+    routeTree: createRootRoute({ component: TasksScreen }),
+    history: createMemoryHistory({ initialEntries: ["/"] }),
+  });
+  const view = render(
+    <QueryClientProvider client={client}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  );
+  fireEvent.click(await view.findByRole("button", { name: "Mark done" }));
+  const dialog = await view.findByRole("alertdialog", {
+    name: "Mark Review notes done?",
+  });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(view.queryByRole("alertdialog")).toBeNull());
+  expect(sent).toEqual([]);
+
+  fireEvent.click(view.getByRole("button", { name: "Mark done" }));
+  const confirm = await view.findByRole("alertdialog");
+  fireEvent.click(within(confirm).getByRole("button", { name: "Mark done" }));
+  fireEvent.click(
+    await within(confirm).findByRole("button", { name: "Try again" }),
+  );
+  await view.findByText("Marked Review notes done. Reopen it under Resolved.");
+  expect(sent).toEqual([{ method: "POST", path: "/api/tasks/a/resolve" }]);
+  cleanup();
+  client.clear();
+});

@@ -1,6 +1,6 @@
 import { IconChevronDown } from "@tabler/icons-react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { Fragment, type ReactNode, useState } from "react";
+import { type ComponentProps, Fragment, type ReactNode, useState } from "react";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
 import { SuggestionRow } from "@/components/suggestions/suggestion-row";
 import { TaskRow } from "@/components/tasks/task-row";
@@ -95,11 +95,13 @@ export function NeedsYouRows({
   lead = [],
   tasks,
   items,
+  onMarkDone,
 }: {
   canChangeTasks?: boolean;
   lead?: ReactNode[];
   tasks: ListedTask[];
   items: ProactiveSuggestion[];
+  onMarkDone?: ComponentProps<typeof TaskRow>["onMarkDone"];
 }) {
   const botName = useBotName();
   const [expanded, setExpanded] = useState(false);
@@ -119,6 +121,7 @@ export function NeedsYouRows({
           botName={botName(listed.task.agentId)}
           canChange={canChangeTasks}
           listed={listed}
+          onMarkDone={onMarkDone}
         />
       ),
     })),

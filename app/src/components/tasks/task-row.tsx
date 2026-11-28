@@ -76,10 +76,14 @@ export function TaskRow({
   listed,
   botName,
   canChange = true,
+  onMarkDone,
 }: {
   listed: ListedTask;
   botName: string;
   canChange?: boolean;
+  onMarkDone?:
+    | ((task: ListedTask["task"], trigger: HTMLButtonElement) => void)
+    | undefined;
 }) {
   // Subscribes this row to the interface language, so choosing another one redraws its time in place.
   useTranslation();
@@ -159,7 +163,10 @@ export function TaskRow({
             <Button
               className="min-h-11"
               disabled={busy}
-              onClick={() => resolve.mutate({ id: task.id, done: true })}
+              onClick={(event) => {
+                if (onMarkDone) onMarkDone(task, event.currentTarget);
+                else resolve.mutate({ id: task.id, done: true });
+              }}
               size="sm"
               variant="ghost"
             >

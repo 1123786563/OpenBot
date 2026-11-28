@@ -2,6 +2,7 @@ import { Button } from "@astryxdesign/core/Button";
 import { Tab, TabList } from "@astryxdesign/core/TabList";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useId, useRef, useState } from "react";
 import { useWaitingRows } from "@/components/approvals/waiting";
@@ -17,6 +18,10 @@ import { BotResponsibilities } from "@/components/responsibilities/responsibilit
 import { RoutinesList } from "@/components/routines/routines-list";
 import { SuggestionsInbox } from "@/components/suggestions/proactive-panel";
 import {
+  ActionUnavailable,
+  useActionConfirmation,
+} from "@/components/ui/action-confirmation";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -26,7 +31,12 @@ import {
 import { useTranslation } from "@/i18n";
 import { useBotNames } from "@/lib/agents/bot-names";
 import { TASK_ORDER } from "@/lib/tasks/groups";
-import { TASK_STATUS_LABEL, type TaskStatus } from "@/lib/tasks/queries";
+import { resolveTaskMutationOptions } from "@/lib/tasks/mutations";
+import {
+  type BotTask,
+  TASK_STATUS_LABEL,
+  type TaskStatus,
+} from "@/lib/tasks/queries";
 
 /** Which list Tasks shows: what waits on you and what your Bots carry, or what to start next. */
 export type TasksView = "active" | "up_next";
@@ -132,6 +142,9 @@ function ActiveView({
   const botName = useBotNames();
   const waiting = useWaitingRows(undefined);
   const taskList = useNeedsYouTasks();
+  const client = useQueryClient();
+  const resolve = useMutation(resolveTaskMutationOptions(client));
+  const { requestConfirmation, confirmation } = useActionConfirmation();
   const { tasks, done } = taskList;
   const listed = [...tasks, ...done];
   const showWaiting = status === "all" || status === "needs_input";
@@ -164,8 +177,48 @@ function ActiveView({
     status === "all" ? "All statuses" : TASK_STATUS_LABEL[status];
   const showReset = ready && count === 0 && status !== "all";
 
+  function markDone(task: BotTask, trigger: HTMLButtonElement) {
+    requestConfirmation({
+      title: t("tasks.markDoneTitle", "Mark {title} done?", {
+        title: task.title,
+      }),
+      description: t(
+        "tasks.markDoneDescription",
+        "The task moves to Resolved. You can reopen it there for seven days. Its conversation stays available.",
+      ),
+      confirmLabel: t("tasks.markDone", "Mark done"),
+      pendingLabel: t("tasks.markDoneSaving", "Saving…"),
+      failureMessage: t(
+        "tasks.markDoneFailed",
+        "Couldn't mark this task done. Try again.",
+      ),
+      successMessage: t(
+        "tasks.markDoneSuccess",
+        "Marked {title} done. Reopen it under Resolved.",
+        { title: task.title },
+      ),
+      variant: "default",
+      trigger,
+      fallbackFocus: () => statusTrigger.current,
+      run: async () => {
+        const latest = await taskList.refetch({ throwOnError: true });
+        const current = latest.data?.find(({ id }) => id === task.id);
+        if (!current || current.title !== task.title)
+          throw new ActionUnavailable(
+            t(
+              "tasks.markDoneStale",
+              "This task changed. Check the list before trying again.",
+            ),
+          );
+        if (current.status !== "resolved")
+          await resolve.mutateAsync({ id: task.id, done: true });
+      },
+    });
+  }
+
   return (
     <VStack gap={6}>
+      {confirmation}
       <VStack gap={2} align="start">
         <Text as="p" size="sm">
           Task status
@@ -272,6 +325,7 @@ function ActiveView({
             canChangeTasks={!taskList.error}
             items={[]}
             lead={group.waiting}
+            onMarkDone={markDone}
             tasks={group.tasks}
           />
         </PageSection>

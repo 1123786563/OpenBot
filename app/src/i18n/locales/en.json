@@ -286,6 +286,13 @@
   "sign.sso.or": "or",
   "sign.title": "Sign in",
   "sign.unconfigured": "Sign-in isn’t set up yet.",
+  "tasks.markDone": "Mark done",
+  "tasks.markDoneDescription": "The task moves to Resolved. You can reopen it there for seven days. Its conversation stays available.",
+  "tasks.markDoneFailed": "Couldn't mark this task done. Try again.",
+  "tasks.markDoneSaving": "Saving…",
+  "tasks.markDoneStale": "This task changed. Check the list before trying again.",
+  "tasks.markDoneSuccess": "Marked {title} done. Reopen it under Resolved.",
+  "tasks.markDoneTitle": "Mark {title} done?",
   "tasks.retryApprovals": "Retry approvals and questions",
   "tasks.retryTasks": "Retry loading tasks"
 }
