@@ -86,20 +86,29 @@ export function groupPollInterval(
   now = Date.now(),
 ): number | false {
   const messages = conversation?.messages ?? [];
+  const background = conversation?.backgroundRuns ?? [];
   if (
     messages.some(
       (message) => message.status === "running" || message.status === "queued",
     ) ||
-    conversation?.backgroundRuns?.some(({ status }) => status === "running") ||
+    background.some(
+      ({ status, waitingForApproval }) =>
+        status === "running" && !waitingForApproval,
+    ) ||
     awaitingFirstReply(messages.at(-1))
   )
     return WORKING_POLL_MS;
-  const waiting = messages.filter(
-    (message) => message.status === "waiting" && message.threadId,
-  );
+  const waiting = [
+    ...messages.flatMap(({ status, threadId }) =>
+      status === "waiting" && threadId ? [threadId] : [],
+    ),
+    ...background.flatMap(({ status, waitingForApproval, threadId }) =>
+      status === "running" && waitingForApproval ? [threadId] : [],
+    ),
+  ];
   if (waiting.length === 0) return false;
-  return waiting.some((message) =>
-    carryingOnAfterApproval(inbox, message.threadId ?? "", now),
+  return waiting.some((threadId) =>
+    carryingOnAfterApproval(inbox, threadId, now),
   )
     ? WORKING_POLL_MS
     : WAITING_POLL_MS;

@@ -167,16 +167,22 @@ export function GroupChat({
         : [],
     ),
   );
+  const carryingOn =
+    carriedOn.size > 0 ||
+    background.some(
+      (run) =>
+        run.waitingForApproval &&
+        carryingOnAfterApproval(inbox.data, run.threadId),
+    );
   const seenCarriedOn = useRef<boolean | undefined>(undefined);
   useEffect(() => {
     const before = seenCarriedOn.current;
-    const now = carriedOn.size > 0;
-    seenCarriedOn.current = now;
-    if (before !== undefined && before !== now)
+    seenCarriedOn.current = carryingOn;
+    if (before !== undefined && before !== carryingOn)
       void queryClient.invalidateQueries({
         queryKey: groupKeys.detail(channelId),
       });
-  }, [carriedOn, channelId, queryClient]);
+  }, [carryingOn, channelId, queryClient]);
   const question = groupQuestion(inbox.data, channelId);
   // The Bot whose conversation it is: for a hand-off, the one that handed the work on.
   const askerId = question?.conversationBotId ?? question?.botId;
@@ -417,7 +423,7 @@ export function GroupChat({
               <ChannelAvatar
                 participantIds={[run.agentId]}
                 size={24}
-                typing={run.status === "running"}
+                typing={run.status === "running" && !run.waitingForApproval}
               />
               <MessageContent>
                 <strong>{names.get(run.agentId)}</strong>

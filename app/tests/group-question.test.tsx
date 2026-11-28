@@ -396,7 +396,9 @@ test("a group this person can no longer read hides its old messages and offers t
 const ERRANDS_THREAD = "errand-helper-group-thread";
 
 /** An approval waiting on the Errand Helper's thread in the group. */
-function waitingApproval(threadId: string) {
+function waitingApproval(
+  threadId: string,
+): ApprovalInboxData["requests"][number] {
   return {
     id: "approval-1",
     status: "pending",
@@ -616,6 +618,41 @@ test("a group keeps reading while a Bot's line waits, and reads faster once the 
   ).toBe(1_500);
 });
 
+test("an approval stops background polling at the waiting pace until the decision", () => {
+  const now = Date.now();
+  const conversation = {
+    bots: [],
+    people: [],
+    messages: [],
+    backgroundRuns: [
+      {
+        id: "run-waiting",
+        agentId: ERRANDS,
+        threadId: ERRANDS_THREAD,
+        status: "running" as const,
+        waitingForApproval: true,
+        partialReply: null,
+        externalOutcome: null,
+      },
+    ],
+  };
+  expect(groupPollInterval(conversation, null, now)).toBe(10_000);
+  const inbox: ApprovalInboxData = {
+    enabled: true,
+    requests: [
+      {
+        ...waitingApproval(ERRANDS_THREAD),
+        status: "approved",
+        decidedAt: new Date(now - 1_000).toISOString(),
+      },
+    ],
+    rules: [],
+    teamRules: [],
+    questions: [],
+  };
+  expect(groupPollInterval(conversation, inbox, now)).toBe(1_500);
+});
+
 /* A run the server holds for an approval, with no line of its own waiting, asks the same way. */
 test("a run waiting on an approval in the group asks there, under no Bot's line", async () => {
   showQuestion = false;
@@ -636,6 +673,7 @@ test("a run waiting on an approval in the group asks there, under no Bot's line"
   expect(
     await view.findByRole("region", { name: "Waiting for your approval" }),
   ).toBeTruthy();
+  expect(view.queryByText("Working…")).toBeNull();
 });
 
 /*
