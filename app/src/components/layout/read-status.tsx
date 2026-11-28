@@ -73,13 +73,14 @@ export function ReadError({
               (document.activeElement !== document.body &&
                 document.activeElement !== dialog) ||
               window.location.href !== address;
-            const focusRecoveredContent = () => {
+            const focusRecoveredContent = (allowFallback: boolean) => {
               if (movedOn()) return true;
               const preferred = focusAfterRetry?.();
               if (preferred?.isConnected) {
                 preferred.focus();
                 if (document.activeElement === preferred) return true;
               }
+              if (focusAfterRetry && !allowFallback) return false;
               for (const region of regions) {
                 if (!region.isConnected) continue;
                 const target =
@@ -93,15 +94,18 @@ export function ReadError({
               }
               return false;
             };
-            if (focusRecoveredContent()) return;
-            const scope = regions.find((region) => region.isConnected);
+            if (focusRecoveredContent(false)) return;
+            const scope = regions.findLast((region) => region.isConnected);
             if (!scope) return;
 
             // The retry can disappear before a suspended conversation commits.
             const observer = new MutationObserver(() => {
-              if (focusRecoveredContent() || !scope.isConnected) stop();
+              if (focusRecoveredContent(false) || !scope.isConnected) stop();
             });
-            const timeout = window.setTimeout(() => stop(), 5_000);
+            const timeout = window.setTimeout(() => {
+              stop();
+              focusRecoveredContent(true);
+            }, 5_000);
             function stop() {
               observer.disconnect();
               window.clearTimeout(timeout);
