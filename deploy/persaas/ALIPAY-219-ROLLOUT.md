@@ -4,14 +4,14 @@
 
 ## 固定版本并复跑本机验收
 
-OpenBot 验收从 `2dbef5eade7576a8889579924d215e49d48036cf` 开始。Flexprice 候选为 `bb780f798bcdf2b14ac68debedee54254e901e74`。两个候选可执行文件的 Go 构建信息均记录该提交、`vcs.modified=false`、`linux/amd64`。
+OpenBot 验收从 `2dbef5eade7576a8889579924d215e49d48036cf` 开始。本机支付演练使用 Flexprice `bb780f798bcdf2b14ac68debedee54254e901e74`。包含 webhook 配置支持的发布候选为 `bb02a7f3ca720e53af215dc46258b90285647d1b`。两个候选可执行文件的 Go 构建信息均记录该提交、`vcs.modified=false`、`linux/amd64`。
 
 | 文件 | SHA-256 |
 | --- | --- |
-| `server` | `2c600567d9c4e2ac875924e9c89fcc373e00491709a96167874048b2bffdfa70` |
-| `migrate` | `10eb3438efd57aaee3080ed46ce9a9a3b2d48042d4352f79648097250bc0cd46` |
+| `server` | `e9a39ac4fa2f1d9058efd22aa7cf3ba28e2d999b0caac72ea2218ab053def1fa` |
+| `migrate` | `10e0395ae9147fc77d0226f8d17e9ddf445c6811ddb5247cd39603ea71614b6f` |
 
-候选文件位于本机 `/tmp/flexprice-214-linux.U6jgwa`。归档时保留对应源码、迁移目录、配置及镜像摘要。当前 `data.yml` 的 `flexprice:2.1.52-persaas` 标签不足以证明运行的是候选版本。发布包中服务和迁移任务应引用同一候选镜像摘要。先在隔离环境执行迁移和启动检查。
+候选文件位于本机 `/tmp/flexprice-214-linux.iBmCp1`。归档时保留对应源码、迁移目录、配置及镜像摘要。当前 `data.yml` 的 `flexprice:2.1.52-persaas` 标签不足以证明运行的是候选版本。发布包中服务和迁移任务应引用同一候选镜像摘要。先在隔离环境执行迁移和启动检查。
 
 在 OpenBot 仓库根目录连接专用本机 PostgreSQL，设置 `TEST_DATABASE_URL`，链接本地 `.env.test` 并安装锁定依赖后执行：
 
@@ -58,7 +58,7 @@ FLEXPRICE_TEST_POSTGRES_DSN="$LOCAL_FLEXPRICE_TEST_DSN" \
 
    多个产品、应用或账号以逗号分隔。检查旧支付宝直连和测试入口在验收环境保持关闭，分别确认 `OPENBOT_CREDIT_PACK_ALIPAY_LIVE_ORIGIN` 和 `OPENBOT_CREDIT_PACK_ALIPAY_TEST_ORIGIN` 缺省。
 
-3. 将 Flexprice 的 `invoice.update.payment` 发送到 OpenBot 的 `/api/billing/credit-pack-flexprice/alipay/callback`，携带与 Runtime 配置相同的 `Authorization: Bearer …`。候选原生 webhook 从 `webhook.tenants` 的 YAML 配置读取 HTTP headers。当前 Infisical env 下发没有该 map 的变量入口。发布前需用受控方式从 Infisical 渲染私有运行配置，或由共享配置实现提供密钥注入，然后在隔离环境实际验收通知传递。此项由 #214 集成处理，同时影响 #220。支付确认仍由 OpenBot 重新读取发票和 QR 状态，定时核验间隔约 60 秒。
+3. 按[配置到账通知](#配置到账通知)注入回调凭据。先在隔离环境验证实际 HTTP 通知送达，再安排真实商户试付。支付确认仍由 OpenBot 重新读取发票和 QR 状态，定时核验间隔约 60 秒。
 
 ## 在授权窗口验收并启用
 
@@ -71,3 +71,9 @@ FLEXPRICE_TEST_POSTGRES_DSN="$LOCAL_FLEXPRICE_TEST_DSN" \
 ## 暂停支付宝新购
 
 清空支付宝单渠道配置的 `OPENBOT_FLEXPRICE_ALIPAY_ACCOUNT_IDS` 并重建 OpenBot。保留支付宝配置、商户通知及核验路由，直至待支付、已支付及待退款订单完成对账。关闭整个 Flexprice checkout 配置会卸载核验、通知和退款入口。双渠道共用名单，双渠道上线后的单渠道停购需另行验证。
+
+## 配置到账通知
+
+在 Flexprice 的 Infisical 服务目录设置 `FLEXPRICE_WEBHOOK_ENABLED=true` 和 `FLEXPRICE_WEBHOOK_TENANTS_JSON`。JSON 的顶层键是 Flexprice 租户 ID。对应租户对象设置 `enabled` 为 `true`，`included_events` 为 `["invoice.update.payment"]`，`endpoint` 为目标 OpenBot 的 HTTPS `/api/billing/credit-pack-flexprice/alipay/callback` 完整 URL。`headers.Authorization` 使用 `Bearer` 加空格及 OpenBot `OPENBOT_FLEXPRICE_ALIPAY_WEBHOOK_TOKEN` 的值。当前环境已有原生 webhook 时，保留其他租户的配置条目。
+
+用测试订单核对 Flexprice 原生通知返回 2xx、OpenBot 只发一次点。校验凭据不一致时通知被拒绝。验收证据只记录回调时间、HTTP 状态及脱敏订单引用。

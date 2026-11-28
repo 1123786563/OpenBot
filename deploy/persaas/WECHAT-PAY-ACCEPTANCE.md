@@ -35,16 +35,16 @@ Flexprice 的三个测试包通过，含 PostgreSQL 结算用例、微信 Native
 
 ## 核对发布版本和密钥
 
-部署前用 `go version -m` 和 `sha256sum` 核对两个 Linux amd64 文件。候选二进制内的 `vcs.revision` 均为 `bb780f798bcdf2b14ac68debedee54254e901e74`，`vcs.modified=false`。
+部署前用 `go version -m` 和 `sha256sum` 核对两个 Linux amd64 文件。候选二进制内的 `vcs.revision` 均为 `bb02a7f3ca720e53af215dc46258b90285647d1b`，`vcs.modified=false`。
 
 | 文件 | SHA-256 |
 | --- | --- |
-| `server` | `2c600567d9c4e2ac875924e9c89fcc373e00491709a96167874048b2bffdfa70` |
-| `migrate` | `10eb3438efd57aaee3080ed46ce9a9a3b2d48042d4352f79648097250bc0cd46` |
+| `server` | `e9a39ac4fa2f1d9058efd22aa7cf3ba28e2d999b0caac72ea2218ab053def1fa` |
+| `migrate` | `10e0395ae9147fc77d0226f8d17e9ddf445c6811ddb5247cd39603ea71614b6f` |
 
 - 在目标 Flexprice 的 Infisical 服务目录保存 `FLEXPRICE_AUTH_DISABLE_SIGNUP=true`，以及 `FLEXPRICE_WECHAT_CHECKOUT_MERCHANTS_JSON`。数组中启用对应商户，核对 `tenant_id` 和 `environment_id`。商户条目使用 `enabled`、`app_id`、`merchant_id`、`serial_number`、`private_key`、`public_key`、`public_key_id`、`api_v3_key` 和 `notify_url`。通知 URL 使用目标 Flexprice HTTPS 地址的 `/v1/webhooks/wechat`。
 - 如目标使用 Flexprice 自身的 Infisical 加载器，核对 `INFISICAL_ENABLED=true`、`INFISICAL_SITE_URL`、`INFISICAL_PROJECT_ID`、`INFISICAL_ENVIRONMENT`、`INFISICAL_SECRET_PATH` 和只读身份的 `INFISICAL_UNIVERSAL_AUTH_CLIENT_ID`、`INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET`。同名容器环境变量会覆盖 Infisical。若使用 Persaas 现有下发流程，从已授权的 Infisical 目录下发到私有容器 env。参见 [Infisical 中间件管理](INFISICAL-MIDDLEWARE.md)。
-- 在 OpenBot API 的 Infisical 配置中填入 `OPENBOT_FLEXPRICE_WECHAT_MERCHANT`，使其与 OpenBot 商户控制所用标识一致。核对共享的 `OPENBOT_FLEXPRICE_ALIPAY_URL`、`OPENBOT_FLEXPRICE_ALIPAY_API_KEY`、`OPENBOT_FLEXPRICE_ALIPAY_WEBHOOK_TOKEN`、`OPENBOT_FLEXPRICE_ENVIRONMENT_ID`、`OPENBOT_FLEXPRICE_ALIPAY_PRODUCTS` 和 `OPENBOT_FLEXPRICE_ALIPAY_APPLICATION_IDS`。Flexprice API Key 必须能在该租户与环境读写发票及支付。两渠道共用 OpenBot 发票通知路径 `/api/billing/credit-pack-flexprice/alipay/callback`。
+- 在 OpenBot API 的 Infisical 配置中填入 `OPENBOT_FLEXPRICE_WECHAT_MERCHANT`，使其与 OpenBot 商户控制所用标识一致。核对共享的 `OPENBOT_FLEXPRICE_ALIPAY_URL`、`OPENBOT_FLEXPRICE_ALIPAY_API_KEY`、`OPENBOT_FLEXPRICE_ALIPAY_WEBHOOK_TOKEN`、`OPENBOT_FLEXPRICE_ENVIRONMENT_ID`、`OPENBOT_FLEXPRICE_ALIPAY_PRODUCTS` 和 `OPENBOT_FLEXPRICE_ALIPAY_APPLICATION_IDS`。Flexprice API Key 必须能在该租户与环境读写发票及支付。两渠道共用一条 OpenBot 发票通知路径。按[配置到账通知](ALIPAY-219-ROLLOUT.md#配置到账通知)设置 Flexprice 原生 webhook，并在隔离环境验证送达。
 - 部署候选版本后，先核对健康、已有账号登录和匿名 `POST /v1/auth/signup` 被拒绝，再配置试付。保留部署前版本及私有配置备份。
 
 ## 真实商户验收后启用
