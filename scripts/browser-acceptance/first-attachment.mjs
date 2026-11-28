@@ -45,6 +45,7 @@ try {
       const newAttachmentId = randomUUID();
       const threadId = randomUUID();
       const channelId = "attachment-handoff";
+      const message = "Review the attached planning brief.";
       const bytes = "The original attachment survives a recipient change.";
       const context = await browser.newContext({
         viewport: { width, height: width === 390 ? 844 : 900 },
@@ -56,6 +57,12 @@ try {
           ({ key, value, theme }) => {
             localStorage.setItem("openbot-theme", theme);
             localStorage.setItem(key, value);
+            Object.defineProperty(navigator.clipboard, "writeText", {
+              value: () =>
+                Promise.reject(
+                  new DOMException("Clipboard is denied.", "NotAllowedError"),
+                ),
+            });
           },
           {
             key: startKey,
@@ -63,7 +70,7 @@ try {
               state: "pending",
               progress: { phase: "creating" },
               draft: {
-                text: "Review the attached planning brief.",
+                text: message,
                 commandIds: [],
                 attachments: [
                   {
@@ -134,6 +141,30 @@ try {
         const errors = [];
         page.on("pageerror", (error) => errors.push(error.message));
         await page.goto(`${FIXTURE_APP_URL}/start/${originalStart}`);
+        await page.getByRole("button", { name: "Copy message text" }).click();
+        const copy = page.getByRole("textbox", { name: "Saved message text" });
+        await copy.waitFor();
+        const clipboardFallback = await copy.evaluate((field) => ({
+          value: field.value,
+          selectedText: field.value.slice(
+            field.selectionStart,
+            field.selectionEnd,
+          ),
+          readOnly: field.readOnly,
+          focused: document.activeElement === field,
+        }));
+        assert.deepEqual(clipboardFallback, {
+          value: message,
+          selectedText: message,
+          readOnly: true,
+          focused: true,
+        });
+        assert.equal(create, undefined);
+        assert.equal(upload, undefined);
+        const clipboardScreenshot = `${name}-clipboard.png`;
+        await page.screenshot({
+          path: join(EVIDENCE_DIR, clipboardScreenshot),
+        });
         await page
           .getByRole("button", { name: "Choose Bots in a new conversation" })
           .click();
@@ -177,6 +208,8 @@ try {
           reads,
           newUpload: true,
           originalPreserved: true,
+          clipboardFallback,
+          clipboardScreenshot,
         });
       } finally {
         await context.close();
