@@ -35,6 +35,8 @@
 
 路由恢复阶段的独立 Impeccable 检测覆盖 8 个源码文件和 18 组 Chromium 页面状态，结果均为 0 项。Vite 生产构建在 1440、390 和 320 像素宽度验证了未知地址、键盘返回和六条旧书签。后续生产构建 `index-Bm9W0Yw_.js` 验证全部 21 条兼容书签，Team 管理员、Team 成员和 Personal 各执行 21 次，63 次全部通过。Goals 与 Ideas 保留 `agent`，旧 Connections 保留回调参数。Team 的 Memory 入口进入 `/capabilities/memory`，Personal 回到 `/bots`。 [书签矩阵](/tmp/openbot-group-review/bookmark-matrix-final.json)
 
+#193 的隔离 OIDC 复验在生产构建 `a692a090c` 中通过。真实 Keycloak 登录返回旧 Goals 书签，随后迁移到 `/responsibilities?agent=expenses&view=goals`。PostgreSQL 中降级同一账号后，原会话打开管理员书签会回到首页。 [验收记录](acceptance/web127-final-evidence.md)
+
 另验证 API 失败后的原地址重试、访客登录回退以及窄屏导航的 Escape 与焦点归还。Web 类型检查通过，七个定向测试文件共 61 项通过。
 
 Tasks 与 Ideas 的独立复评覆盖 Vite 生产构建、Team 浅色 1440×900 和 Personal 深色 390×844。4 个源文件扫描无发现，14 个渲染场景中有 5 条桌面嵌套容器提示，集中在任务或建议空态。窄屏无检测项及横向溢出。四项模拟读取故障均恢复到正确状态。Web 类型检查和 44 项定向测试通过。

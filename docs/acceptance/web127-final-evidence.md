@@ -36,7 +36,7 @@ Web 构建提交为 `ccca02100ed6f9eb68321eb03541053553c04449`，入口 HTML 的
 
 `PATCH /api/settings/preferences` 只接受 `openbot` 作为 skin。退役值返回 400，混合请求中的其他变更也不生效。既有 PostgreSQL 行即使存有 `openduet`，读出和更新其他偏好后的响应均为 `openbot`，数据库继续保留兼容值。
 
-#193 使用构建提交 `ccca02100` 复跑了旧书签、登录回跳和认证客户端测试，共 126 项通过。模拟 Team 成员从 `/s/goals?agent=expenses` 发起登录后，目标路径仍保留原地址。恢复已登录会话后，路由到达 `/responsibilities?agent=expenses&view=goals`。真实身份提供者回调和账号角色降级仍待验证。 [书签测试](../../app/tests/legacy-bookmarks.test.tsx) [登录回跳测试](../../app/tests/sign-resume.test.tsx)
+#193 使用构建提交 `ccca02100` 复跑了旧书签、登录回跳和认证客户端测试，共 126 项通过。模拟 Team 成员从 `/s/goals?agent=expenses` 发起登录后，目标路径仍保留原地址。恢复已登录会话后，路由到达 `/responsibilities?agent=expenses&view=goals`。隔离 OIDC 复验使用构建 `a692a090c`、本机 Keycloak 26.4.7 和 PostgreSQL，经过 OpenBot 的真实授权码回调，保留 `agent=expenses` 并进入 Goals。在同一会话内将测试账号从管理员降为成员后，`/api/me` 返回成员，重新打开 `/admin/plugins/parallel` 回到首页。记录与截图位于 `~/.local/state/openbot-spec-127/evidence/group-acceptance.2OHO1J/bookmarks-oidc/`。 [书签测试](../../app/tests/legacy-bookmarks.test.tsx) [登录回跳测试](../../app/tests/sign-resume.test.tsx)
 
 ## 设计判断
 
