@@ -92,7 +92,13 @@ Chromium 和 WebKit 各验证了首次使用的进度保存、完成保存与预
 
 - #185 在 Web 构建 `87bb5713a` 的 390×844 Chromium 中使用本地 Keycloak 登录 Team 管理员和成员。独立 OpenBot API 创建双 Bot 群聊，成员加入前读取为 404。管理员在浏览器添加成员后，成员可读取群聊并看到两位 Bot 和两位成员。成员移除创建者被拒绝。管理员确认移除成员后，成员请求恢复为 404，重新打开只显示恢复入口。 [群聊权限记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/group-team-members.8gMLMu/run.json) · [构建清单](/Users/wuyj/.local/state/openbot-spec-127/evidence/group-team-members.8gMLMu/manifest.json)
 
-使用构建 `9f72e8f5f` 的隔离 API，按 Personal 和 Team 的实际路由要求启用模拟 Arcade 或 Composio。四个目录入口各在桌面、窄屏及浅深两套主题组合复验，16 个样本均进入预期目录。修正后的全量走查仍有 360 个页面样本和 63 个书签样本，未检测到页面异常、文档级横向溢出或未实现的模拟端点。此轮证据覆盖路由和首屏。真实供应商授权、完整任务和读屏仍待验。 [全量记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/full-broker-corrected.hcLqq1/run.json) · [目录采集修正 PR #261](https://github.com/1123786563/OpenBot/pull/261)
+使用构建 `9f72e8f5f` 的隔离 API，按 Personal 和 Team 的实际路由要求启用模拟 Arcade 或 Composio。四个目录入口各在桌面、窄屏及浅深两套主题组合复验，16 个样本均进入预期目录。修正后的全量走查仍有 360 个页面样本和 63 个书签样本，未检测到页面异常、文档级横向溢出或未实现的模拟端点。此轮证据覆盖路由和首屏。真实供应商授权和完整任务仍待验。目录读屏补测见下方。 [全量记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/full-broker-corrected.hcLqq1/run.json) · [目录采集修正 PR #261](https://github.com/1123786563/OpenBot/pull/261)
+
+### #188 Memory 与 #190 供应商目录复验
+
+在主线构建 `bbbbe63fa` 上，Memory 的模拟 403 隐藏新增入口。权限恢复后，键盘重试聚焦 Your memories，搜索与状态筛选可同时生效。Chromium 和 WebKit 共通过 12 个场景，覆盖三种宽度与浅深主题。另用 Orca 复验模拟 503 的重试焦点。Web 和隔离 PostgreSQL 定向回归 139 项通过，3 项自托管 Hindsight 测试跳过。 [权限与筛选场景](/Users/wuyj/.local/state/openbot-spec-127/evidence/memory-permission-browser.s3Ylzs/run.json) · [读屏](/Users/wuyj/.local/state/openbot-spec-127/evidence/orca-memory-recovery.3qUf8a) · [定向回归](/Users/wuyj/.local/state/openbot-spec-127/evidence/web188-current-regression.c8nOgF/results.log)
+
+同一主线构建使用 Firefox ESR、Orca 和隔离 API 复验四个 Arcade 与 Composio 目录入口。Personal 和 Team 管理员收到模拟 503 时均可在原页重试。配置恢复后，焦点回到 Search apps。连接和授权定向回归共 125 项通过，覆盖 GitHub 添加中断后沿用请求标识以及 Arcade 连接与审计写入。真实供应商授权、真实 Bot 使用范围和独立评分仍待验。 [Personal 读屏](/Users/wuyj/.local/state/openbot-spec-127/evidence/orca-broker-directory.UReeeL) · [Team 读屏](/Users/wuyj/.local/state/openbot-spec-127/evidence/orca-admin-broker-directory.sZVzgc) · [连接回归](/Users/wuyj/.local/state/openbot-spec-127/evidence/web190-connection-regression.tT7XaJ/results.log)
 
 ### #189 工作视图复验
 
@@ -128,7 +134,7 @@ Chromium 和 WebKit 在三种宽度及浅深主题下通过 12 个 Tasks 并发�
 | `view-22` | Bot setup · `/bots/$agentId/setup` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-23` | Bot sharing · `/bots/$agentId/sharing` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-24` | Skills · `/capabilities/skills` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
-| `view-25` | Memory · `/capabilities/memory` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
+| `view-25` | Memory · `/capabilities/memory` | Team 管理员 | 4/4 首屏。另验模拟权限拒绝、读屏重试与组合筛选 | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-26` | Routines · `/routines` | Personal | 4/4 首屏。另验历史来源跳转与嵌入视图重试。独立评分待验 | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-27` | New routine · `/routines/new` | Personal | 4/4 首屏。另验三种本地角色保存、调度读屏和触区。独立评分待验 | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-28` | Connections · `/connections` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
@@ -137,8 +143,8 @@ Chromium 和 WebKit 在三种宽度及浅深主题下通过 12 个 Tasks 并发�
 | `view-31` | GitHub · `/connections/github` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-32` | Slack · `/connections/slack` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-33` | Routines connection · `/connections/routines` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
-| `view-34` | Arcade directory · `/connections/browse/arcade` | Personal | 4/4。启用对应模拟供应商后进入目录，待验真实授权和完整任务 | 待 待 待 待 待 待 待 待 待 待 | 40 |
-| `view-35` | Composio directory · `/connections/browse/composio` | Personal | 4/4。启用对应模拟供应商后进入目录，待验真实授权和完整任务 | 待 待 待 待 待 待 待 待 待 待 | 40 |
+| `view-34` | Arcade directory · `/connections/browse/arcade` | Personal | 4/4 首屏。另验配置读取失败后的读屏重试与搜索焦点，真实授权待验 | 待 待 待 待 待 待 待 待 待 待 | 40 |
+| `view-35` | Composio directory · `/connections/browse/composio` | Personal | 4/4 首屏。另验配置读取失败后的读屏重试与搜索焦点，真实授权待验 | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-36` | /tasks · `/tasks` | Personal | 4/4 首屏。另验并发故障、键盘重试及源会话跳转。独立评分待验 | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-37` | /ideas · `/ideas` | Personal | 4/4 首屏。另验 Bot 列表与建议读取的读屏重试。独立评分待验 | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-38` | /responsibilities · `/responsibilities` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
@@ -167,8 +173,8 @@ Chromium 和 WebKit 在三种宽度及浅深主题下通过 12 个 Tasks 并发�
 | `view-61` | Plugin detail · `/admin/plugins/$key` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-62` | Plugin Bot access · `/admin/plugins/$key/bots/$agentId` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-63` | Plugin tools · `/admin/plugins/$key/tools/$tool` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
-| `view-64` | Arcade admin · `/admin/plugins/arcade` | Team 管理员 | 4/4。启用对应模拟供应商后进入目录，待验真实授权和完整任务 | 待 待 待 待 待 待 待 待 待 待 | 40 |
-| `view-65` | Composio admin · `/admin/plugins/composio` | Team 管理员 | 4/4。启用对应模拟供应商后进入目录，待验真实授权和完整任务 | 待 待 待 待 待 待 待 待 待 待 | 40 |
+| `view-64` | Arcade admin · `/admin/plugins/arcade` | Team 管理员 | 4/4 首屏。另验配置读取失败后的读屏重试与搜索焦点，真实授权待验 | 待 待 待 待 待 待 待 待 待 待 | 40 |
+| `view-65` | Composio admin · `/admin/plugins/composio` | Team 管理员 | 4/4 首屏。另验配置读取失败后的读屏重试与搜索焦点，真实授权待验 | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-66` | Admin proactive · `/admin/proactive` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-67` | Providers · `/admin/providers` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-68` | Admin skills · `/admin/skills` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
