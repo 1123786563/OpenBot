@@ -236,14 +236,18 @@
     "view": "Arcade directory",
     "route": "/connections/browse/arcade",
     "path": "/connections/browse/arcade",
-    "role": "teamAdmin",
+    "role": "personal",
+    "broker": "arcade",
+    "heading": "Browse apps",
     "maximum": 40
   },
   {
     "view": "Composio directory",
     "route": "/connections/browse/composio",
     "path": "/connections/browse/composio",
-    "role": "teamAdmin",
+    "role": "personal",
+    "broker": "composio",
+    "heading": "Browse apps",
     "maximum": 40
   },
   {
@@ -451,6 +455,8 @@
     "route": "/admin/plugins/arcade",
     "path": "/admin/plugins/arcade",
     "role": "teamAdmin",
+    "broker": "arcade",
+    "heading": "Browse apps",
     "maximum": 40
   },
   {
@@ -458,6 +464,8 @@
     "route": "/admin/plugins/composio",
     "path": "/admin/plugins/composio",
     "role": "teamAdmin",
+    "broker": "composio",
+    "heading": "Browse apps",
     "maximum": 40
   },
   {
