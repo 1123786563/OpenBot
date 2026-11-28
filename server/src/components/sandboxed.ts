@@ -1,9 +1,16 @@
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { asc, eq } from "drizzle-orm";
-import { type AuditStore, recordAuditEvent } from "../audit";
+import { asc, eq, sql } from "drizzle-orm";
+import {
+  type AuditEventInput,
+  type AuditStore,
+  createAuditStore,
+  recordAuditEvent,
+  withAuditTransaction,
+} from "../audit";
 import type { Database } from "../db/client";
 import { components, sandboxedComponents } from "../db/schema";
+import { ComponentPublicationConflictError } from "./store";
 
 /**
  * Components authored in a browser rather than compiled into the build.
@@ -25,6 +32,16 @@ import { components, sandboxedComponents } from "../db/schema";
  * every Bot draws in production. A draft absorbs that: edited freely, previewed against sample
  * arguments, and reaching nobody until somebody publishes it.
  */
+
+type PublicationPreview = { expectedUpdatedAt: string; event: AuditEventInput };
+
+function publicationTime(updatedAt: Date, preview?: PublicationPreview): Date {
+  if (!preview) return new Date();
+  if (updatedAt.toISOString() !== preview.expectedUpdatedAt) {
+    throw new ComponentPublicationConflictError();
+  }
+  return new Date(Math.max(Date.now(), updatedAt.getTime() + 1));
+}
 
 export type SandboxedRecord = {
   name: string;
@@ -247,7 +264,7 @@ export function createSandboxedStore(
               title: input.title,
               draftDescription: input.description,
               updatedBy: input.by,
-              updatedAt: new Date(),
+              updatedAt: sql`greatest(clock_timestamp(), ${components.updatedAt} + interval '1 millisecond')`,
             },
           });
         if (!row) throw new Error("The playground draft was not saved.");
@@ -276,100 +293,109 @@ export function createSandboxedStore(
       name: string,
       by: string,
       expectedDraftVersion?: string,
+      preview?: PublicationPreview,
     ): Promise<SandboxedRecord> {
-      const outcome = await database.transaction(async (transaction) => {
-        const [row] = await transaction
-          .select()
-          .from(sandboxedComponents)
-          .where(eq(sandboxedComponents.name, name))
-          .limit(1)
-          .for("update");
-        if (
-          expectedDraftVersion &&
-          (!row || draftVersion(row) !== expectedDraftVersion)
-        ) {
-          throw new SandboxedDraftChangedError();
-        }
-        if (!row) {
-          throw new SandboxedPublicationRefusedError(
-            `${name} has no stored playground source to publish.`,
-          );
-        }
-        const [governance] = await transaction
-          .select()
-          .from(components)
-          .where(eq(components.name, name))
-          .limit(1)
-          .for("update");
-        if (governance?.kind !== "sandboxed") {
-          throw new SandboxedPublicationRefusedError(
-            `${name} has no playground governance row to publish.`,
-          );
-        }
+      const outcome = await withAuditTransaction(
+        database,
+        async (transaction, deferTap) => {
+          const [row] = await transaction
+            .select()
+            .from(sandboxedComponents)
+            .where(eq(sandboxedComponents.name, name))
+            .limit(1)
+            .for("update");
+          if (
+            expectedDraftVersion &&
+            (!row || draftVersion(row) !== expectedDraftVersion)
+          ) {
+            throw new SandboxedDraftChangedError();
+          }
+          if (!row) {
+            throw new SandboxedPublicationRefusedError(
+              `${name} has no stored playground source to publish.`,
+            );
+          }
+          const [governance] = await transaction
+            .select()
+            .from(components)
+            .where(eq(components.name, name))
+            .limit(1)
+            .for("update");
+          if (governance?.kind !== "sandboxed") {
+            throw new SandboxedPublicationRefusedError(
+              `${name} has no playground governance row to publish.`,
+            );
+          }
 
-        if (!row.draftDescription.trim()) {
-          throw new SandboxedPublicationRefusedError(
-            `${name} needs a description before it can be published.`,
-          );
-        }
-        if (!row.draftHtml.trim()) {
-          throw new SandboxedPublicationRefusedError(
-            `${name} needs rendered HTML before it can be published.`,
-          );
-        }
+          if (!row.draftDescription.trim()) {
+            throw new SandboxedPublicationRefusedError(
+              `${name} needs a description before it can be published.`,
+            );
+          }
+          if (!row.draftHtml.trim()) {
+            throw new SandboxedPublicationRefusedError(
+              `${name} needs rendered HTML before it can be published.`,
+            );
+          }
 
-        const unchanged =
-          row.published &&
-          governance.published &&
-          row.publishedDescription === row.draftDescription &&
-          row.publishedHtml === row.draftHtml &&
-          row.publishedCss === row.draftCss &&
-          row.publishedJsFunctions === row.draftJsFunctions &&
-          sameJson(row.publishedArgumentSchema, row.draftArgumentSchema);
-        if (unchanged) return { record: toRecord(row), changed: false };
+          const now = publicationTime(governance.updatedAt, preview);
+          const unchanged =
+            row.published &&
+            governance.published &&
+            row.publishedDescription === row.draftDescription &&
+            row.publishedHtml === row.draftHtml &&
+            row.publishedCss === row.draftCss &&
+            row.publishedJsFunctions === row.draftJsFunctions &&
+            sameJson(row.publishedArgumentSchema, row.draftArgumentSchema);
+          if (unchanged) return { record: toRecord(row), changed: false };
 
-        const now = new Date();
-        const revision = row.revision + 1;
-        await transaction
-          .update(sandboxedComponents)
-          .set({
-            publishedDescription: row.draftDescription,
-            publishedHtml: row.draftHtml,
-            publishedCss: row.draftCss,
-            publishedJsFunctions: row.draftJsFunctions,
-            publishedArgumentSchema: row.draftArgumentSchema,
-            published: true,
-            publishedAt: now,
-            revision,
-            updatedAt: now,
-          })
-          .where(eq(sandboxedComponents.name, name));
+          const revision = row.revision + 1;
+          await transaction
+            .update(sandboxedComponents)
+            .set({
+              publishedDescription: row.draftDescription,
+              publishedHtml: row.draftHtml,
+              publishedCss: row.draftCss,
+              publishedJsFunctions: row.draftJsFunctions,
+              publishedArgumentSchema: row.draftArgumentSchema,
+              published: true,
+              publishedAt: now,
+              revision,
+              updatedAt: now,
+            })
+            .where(eq(sandboxedComponents.name, name));
 
-        await transaction
-          .update(components)
-          .set({
-            publishedDescription: row.draftDescription,
-            published: true,
-            publishedAt: now,
-            updatedBy: by,
-            updatedAt: now,
-          })
-          .where(eq(components.name, name));
+          await transaction
+            .update(components)
+            .set({
+              publishedDescription: row.draftDescription,
+              published: true,
+              publishedAt: now,
+              updatedBy: by,
+              updatedAt: now,
+            })
+            .where(eq(components.name, name));
 
-        const [updated] = await transaction
-          .select()
-          .from(sandboxedComponents)
-          .where(eq(sandboxedComponents.name, name))
-          .limit(1);
-        if (!updated) {
-          throw new SandboxedPublicationRefusedError(
-            `${name} disappeared while it was being published.`,
-          );
-        }
-        return { record: toRecord(updated), changed: true };
-      });
+          const [updated] = await transaction
+            .select()
+            .from(sandboxedComponents)
+            .where(eq(sandboxedComponents.name, name))
+            .limit(1);
+          if (!updated) {
+            throw new SandboxedPublicationRefusedError(
+              `${name} disappeared while it was being published.`,
+            );
+          }
+          if (preview)
+            await recordAuditEvent(
+              createAuditStore(transaction, deferTap),
+              preview.event,
+            );
+          return { record: toRecord(updated), changed: true };
+        },
+      );
 
-      if (outcome.changed) {
+      if (outcome.changed && !preview) {
         await recordAuditEvent(auditStore, {
           eventType: "component.published",
           targetType: "component",
@@ -391,41 +417,53 @@ export function createSandboxedStore(
      * together. The published columns stay put: re-publishing the same draft is a decision to make
      * it drawable again, not a request to reconstruct source that was deliberately retained.
      */
-    async unpublish(name: string, by: string): Promise<void> {
-      const changed = await database.transaction(async (transaction) => {
-        const [governance] = await transaction
-          .select()
-          .from(components)
-          .where(eq(components.name, name))
-          .limit(1)
-          .for("update");
-        if (governance?.kind !== "sandboxed") {
-          throw new SandboxedNotFoundError(name);
-        }
+    async unpublish(
+      name: string,
+      by: string,
+      preview?: PublicationPreview,
+    ): Promise<void> {
+      const changed = await withAuditTransaction(
+        database,
+        async (transaction, deferTap) => {
+          const [row] = await transaction
+            .select()
+            .from(sandboxedComponents)
+            .where(eq(sandboxedComponents.name, name))
+            .limit(1)
+            .for("update");
+          const [governance] = await transaction
+            .select()
+            .from(components)
+            .where(eq(components.name, name))
+            .limit(1)
+            .for("update");
+          if (governance?.kind !== "sandboxed") {
+            throw new SandboxedNotFoundError(name);
+          }
 
-        const [row] = await transaction
-          .select()
-          .from(sandboxedComponents)
-          .where(eq(sandboxedComponents.name, name))
-          .limit(1)
-          .for("update");
-        if (!governance.published && !row?.published) return false;
+          const now = publicationTime(governance.updatedAt, preview);
+          if (!governance.published && !row?.published) return false;
 
-        const now = new Date();
-        if (row) {
+          if (row) {
+            await transaction
+              .update(sandboxedComponents)
+              .set({ published: false, updatedAt: now })
+              .where(eq(sandboxedComponents.name, name));
+          }
           await transaction
-            .update(sandboxedComponents)
-            .set({ published: false, updatedAt: now })
-            .where(eq(sandboxedComponents.name, name));
-        }
-        await transaction
-          .update(components)
-          .set({ published: false, updatedBy: by, updatedAt: now })
-          .where(eq(components.name, name));
-        return true;
-      });
+            .update(components)
+            .set({ published: false, updatedBy: by, updatedAt: now })
+            .where(eq(components.name, name));
+          if (preview)
+            await recordAuditEvent(
+              createAuditStore(transaction, deferTap),
+              preview.event,
+            );
+          return true;
+        },
+      );
 
-      if (!changed) return;
+      if (!changed || preview) return;
       await recordAuditEvent(auditStore, {
         eventType: "component.unpublished",
         targetType: "component",
