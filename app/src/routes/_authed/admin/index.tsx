@@ -1,6 +1,7 @@
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
-import { IconChevronRight } from "@tabler/icons-react";
+import { IconChecks, IconChevronRight } from "@tabler/icons-react";
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useLocation } from "@tanstack/react-router";
 import { Fragment, type MouseEvent, useLayoutEffect, useRef } from "react";
 import { z } from "zod";
@@ -14,6 +15,7 @@ import {
   PageSection,
   PageShell,
 } from "@/components/layout/page-shell";
+import { ReadError } from "@/components/layout/read-status";
 import {
   Item,
   ItemContent,
@@ -22,16 +24,29 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { useTranslation } from "@/i18n";
 import { isComposing } from "@/lib/composing";
+import { sharedUseRequestsQueryOptions } from "@/lib/plugins/shared-use";
 
 export const Route = createFileRoute("/_authed/admin/")({
   component: RouteComponent,
   validateSearch: z.object({ q: z.string().optional().catch(undefined) }),
 });
 
+const commonTaskPaths = ["/admin/people", "/admin/providers", "/admin/audit"];
+const settings = ADMIN_NAVIGATION.flatMap(({ items }) => items);
+const commonTasks = commonTaskPaths.flatMap((path) =>
+  settings.filter((item) => item.linkOptions.to === path),
+);
+const otherSettings = ADMIN_NAVIGATION.map((section) => ({
+  ...section,
+  items: section.items.filter((item) => !commonTasks.includes(item)),
+})).filter((section) => section.items.length > 0);
+
 let lastOpenedSetting: { historyEntry: string; title: string } | undefined;
 
 function RouteComponent() {
+  const { t } = useTranslation();
   const { q = "" } = Route.useSearch();
   const navigate = Route.useNavigate();
   const historyEntry = useLocation({
@@ -137,21 +152,89 @@ function RouteComponent() {
           />
         ) : null
       ) : (
-        ADMIN_NAVIGATION.map((section) => (
-          <PageSection
-            description={section.description || undefined}
-            key={section.title}
-            title={section.title}
-          >
+        <>
+          <PendingAccountRequests />
+          <PageSection title={t("admin.overview.commonTasks", "Common tasks")}>
             <AdminSettingRows
-              items={section.items}
+              items={commonTasks}
               registerLink={registerLink}
               rememberLink={rememberLink}
             />
           </PageSection>
-        ))
+          {otherSettings.map((section) => (
+            <PageSection
+              description={section.description || undefined}
+              key={section.title}
+              title={section.title}
+            >
+              <AdminSettingRows
+                items={section.items}
+                registerLink={registerLink}
+                rememberLink={rememberLink}
+              />
+            </PageSection>
+          ))}
+        </>
       )}
     </PageShell>
+  );
+}
+
+function PendingAccountRequests() {
+  const { t } = useTranslation();
+  const requests = useQuery(sharedUseRequestsQueryOptions(true));
+  const heading = useRef<HTMLHeadingElement>(null);
+  if (requests.isPending) return null;
+  const pending = requests.data?.length ?? 0;
+  if (!requests.error && pending === 0) return null;
+
+  return (
+    <PageSection
+      headingRef={heading}
+      title={t("admin.overview.needsAttention", "Needs attention")}
+    >
+      {requests.error ? (
+        <ReadError
+          focusAfterRetry={() => heading.current}
+          message={t(
+            "admin.overview.requestsError",
+            "Couldn't load shared account requests.",
+          )}
+          retry={requests.refetch}
+          retryLabel={t(
+            "admin.overview.retryRequests",
+            "Retry shared account requests",
+          )}
+          retrying={requests.isFetching}
+        />
+      ) : (
+        <PageRows>
+          <Item
+            render={
+              <Link to="/admin/approvals" hash="shared-account-requests" />
+            }
+            size="sm"
+          >
+            <ItemMedia variant="icon">
+              <IconChecks />
+            </ItemMedia>
+            <ItemContent>
+              <ItemTitle>
+                {t("admin.overview.requests", "Shared account requests")}
+              </ItemTitle>
+              <ItemDescription className="text-sm">
+                {t(
+                  "admin.overview.requestsCount",
+                  "{count, plural, one {# request needs review.} other {# requests need review.}}",
+                  { count: pending },
+                )}
+              </ItemDescription>
+            </ItemContent>
+            <IconChevronRight className="size-4 shrink-0 text-muted-foreground" />
+          </Item>
+        </PageRows>
+      )}
+    </PageSection>
   );
 }
 

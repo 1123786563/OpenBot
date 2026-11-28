@@ -1,4 +1,10 @@
 {
+  "admin.overview.commonTasks": "常用任务",
+  "admin.overview.needsAttention": "待处理事项",
+  "admin.overview.requests": "共享账号请求",
+  "admin.overview.requestsCount": "{count, plural, other {# 个请求待审核。}}",
+  "admin.overview.requestsError": "无法加载共享账号请求。",
+  "admin.overview.retryRequests": "重试加载共享账号请求",
   "admin.sidebar.approvals": "审批",
   "admin.sidebar.audit": "审计",
   "admin.sidebar.automaticLearning": "自动学习",

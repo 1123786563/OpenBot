@@ -120,7 +120,11 @@ export function SharedUseRequests() {
   };
 
   return (
-    <PageSection headingRef={heading} title="Shared account requests">
+    <PageSection
+      headingRef={heading}
+      id="shared-account-requests"
+      title="Shared account requests"
+    >
       {confirmation}
       {requests.isError ? (
         <ReadError

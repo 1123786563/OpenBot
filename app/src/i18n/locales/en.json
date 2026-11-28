@@ -1,4 +1,10 @@
 {
+  "admin.overview.commonTasks": "Common tasks",
+  "admin.overview.needsAttention": "Needs attention",
+  "admin.overview.requests": "Shared account requests",
+  "admin.overview.requestsCount": "{count, plural, one {# request needs review.} other {# requests need review.}}",
+  "admin.overview.requestsError": "Couldn't load shared account requests.",
+  "admin.overview.retryRequests": "Retry shared account requests",
   "admin.sidebar.approvals": "Approvals",
   "admin.sidebar.audit": "Audit",
   "admin.sidebar.automaticLearning": "Automatic learning",
