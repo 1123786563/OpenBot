@@ -251,7 +251,8 @@ export function PluginsListPage({
     const target = rows.current.get(id);
     restoredEntry.current = entry;
     lastOpenedPlugin = undefined;
-    if (document.activeElement === document.body)
+    const active = document.activeElement;
+    if (active === document.body || active?.matches("main"))
       (target ?? input.current ?? heading.current)?.focus();
   }, [entry, plugins.isFetching, plugins.isSuccess, returnPlugin]);
 
