@@ -85,3 +85,10 @@ This verifies configuration migration and service availability. It does not supe
 User narrowed vault scope again: database service env is local-only. Removed five entries (ClickHouse, MySQL, pgvector/PostgreSQL, Redis, and embedded Lago PostgreSQL) and four empty folders from Infrastructure. Current inventory is 13 folders/23 env entries, including B Collector; A checks passed with zero differences across 12 folders/22 files. No database files were deleted and no containers were restarted. Client connection variables remain in application/middleware env.
 
 Synchronization now excludes database images; backups explicitly retain database env discovery. Six local Compose checks pass, including an embedded Lago database exclusion and backup inclusion check. Shell syntax validation passed.
+
+
+## 2026-11-28 — individual variables instead of file-valued secrets
+
+Infrastructure migrated 23 env files into 468 individual variables across 23 service folders. Multi-file projects use service child folders to isolate duplicate names. Destination values were read back exactly; every A env matched Compose-parsed variables (zero local file changes). Collector was parsed from the existing saved env and migrated into eight individual variables. All old file-valued ENV_* entries were removed after destination verification. Runtime app variables and database exclusions are unchanged.
+
+The sync tool now parses env with Compose and regenerates local env from individual values, escaping literal dollars and quotes. Local checks passed for duplicate-name isolation, database exclusion/backup inclusion, special-value round trips, invalid names, rollback, idempotency, and shared-stack service ownership. No production containers were restarted for this format migration.

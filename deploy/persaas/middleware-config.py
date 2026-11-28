@@ -61,11 +61,14 @@ class Vault:
         return {item['secretKey']: item['secretValue'] for item in self.call('v4/secrets?' + query)['secrets']}
 
     def write(self, folder, values):
-        try:
-            self.call('v2/folders', {'projectId': self.project, 'environment': 'prod', 'name': folder, 'path': '/'})
-        except urllib.error.HTTPError as error:
-            if error.code not in (400, 409):
-                raise
+        parent = '/'
+        for part in folder.split('/'):
+            try:
+                self.call('v2/folders', {'projectId': self.project, 'environment': 'prod', 'name': part, 'path': parent})
+            except urllib.error.HTTPError as error:
+                if error.code not in (400, 409):
+                    raise
+            parent = parent.rstrip('/') + '/' + part
         old = self.read(folder)
         new = [{'secretKey': key, 'secretValue': value} for key, value in values.items() if key not in old]
         if new:
@@ -168,33 +171,55 @@ def materialize(compose):
         raise
 
 
-def apply_env(compose, values, write=False, project=None):
-    files = env_files(compose, project)
-    if set(values) != set(files):
-        raise RuntimeError('Vault must contain exactly the discovered .env files')
-    changes = [(path, values[key]) for key, path in files.items() if env_text(path.read_text()) != values[key]]
-    if not write or not changes:
-        return len(changes)
+def env_values(path):
+    # Compose is the parser so quoting, dollar signs and multiline values agree with Docker.
+    with tempfile.TemporaryDirectory(prefix='.env-read-', dir=path.parent) as directory:
+        probe = Path(directory) / 'compose.json'
+        probe.write_text(json.dumps({'services': {'probe': {'image': 'busybox:1.37', 'env_file': [str(path)]}}}))
+        values = definition(probe)['services']['probe'].get('environment', {})
+    if any(not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', key) or not isinstance(value, str) for key, value in values.items()):
+        raise RuntimeError('Invalid environment variable')
+    # Compose config escapes literal dollars for reuse as Compose input.
+    return {key: value.replace('$$', '$') for key, value in values.items()}
+
+
+def variable_groups(compose, project):
+    paths = list(env_files(compose, project).values())
+    result = {}
+    for path in paths:
+        name = path.name.removeprefix('.container-').removesuffix('.env')
+        name = re.sub('[^A-Za-z0-9_-]', '-', name).strip('-')
+        folder = project if len(paths) == 1 else project + '/' + name
+        if not name or folder in result:
+            raise RuntimeError('Ambiguous service environment folder')
+        result[folder] = path
+    return result
+
+
+def apply_variables(compose, path, values, write=False):
+    if any(not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', key) or not isinstance(value, str) for key, value in values.items()):
+        raise RuntimeError('Invalid environment variable')
+    if env_values(path) == values:
+        return 0
+    if not write:
+        return 1
+    if path.is_symlink():
+        raise RuntimeError('Invalid env file')
+    old = path.read_text()
+    stat = path.stat()
     backup = ROOT / 'backups' / ('env-apply-' + str(time.time_ns()))
     backup.mkdir(mode=0o700, parents=True)
-    originals = []
-    for path, value in changes:
-        if path.is_symlink() or not isinstance(value, str):
-            raise RuntimeError('Invalid env file')
-        stat = path.stat()
-        old = path.read_text()
-        atomic(backup / path.name, old)
-        originals.append((path, old, stat))
+    atomic(backup / path.name, old)
+    text = ''.join(key + '=' + json.dumps(value.replace('$', '$$'), ensure_ascii=False) + '\n' for key, value in sorted(values.items()))
     try:
-        for path, value in changes:
-            stat = path.stat()
-            atomic(path, value + '\n', stat.st_mode & 0o777, stat.st_uid, stat.st_gid)
+        atomic(path, text, stat.st_mode & 0o777, stat.st_uid, stat.st_gid)
+        if env_values(path) != values:
+            raise RuntimeError('Generated env readback mismatch')
         definition(compose)
     except Exception:
-        for path, old, stat in originals:
-            atomic(path, old, stat.st_mode & 0o777, stat.st_uid, stat.st_gid)
+        atomic(path, old, stat.st_mode & 0o777, stat.st_uid, stat.st_gid)
         raise
-    return len(changes)
+    return 1
 
 
 def main():
@@ -215,21 +240,25 @@ def main():
             materialize(compose)
             print(folder + ': container environment preserved')
             continue
-        files = env_files(compose, folder)
-        if not files:
+        groups_for_project = variable_groups(compose, folder)
+        if not groups_for_project:
             continue
-        if args.action == 'push':
-            values = {key: env_text(path.read_text()) for key, path in files.items()}
-            vault.write(folder, values)
-            count = len(files)
-            print(folder + ': verified ' + str(count) + ' env files')
-        else:
-            count = apply_env(compose, vault.read(folder), args.action == 'apply', folder)
-            print(folder + ': ' + str(count) + ' changed env files')
-            if args.restart:
-                services = ['--no-deps', folder] if folder in ('flexprice', 'temporal') else []
-                run('docker', 'compose', '-f', str(compose), 'up', '-d', '--force-recreate', *services, cwd=compose.parent)
-        report.append({'project': folder, 'count': count})
+        count = 0
+        for secret_path, path in groups_for_project.items():
+            if args.action == 'push':
+                values = env_values(path)
+                vault.write(secret_path, values)
+                if vault.read(secret_path) != values:
+                    raise RuntimeError('Unexpected vault entries; migration required')
+                print(secret_path + ': verified ' + str(len(values)) + ' variables')
+            else:
+                changed = apply_variables(compose, path, vault.read(secret_path), args.action == 'apply')
+                count += changed
+                print(secret_path + ': ' + str(changed) + ' changed env files')
+        if args.restart:
+            services = ['--no-deps', folder] if folder in ('flexprice', 'temporal') else []
+            run('docker', 'compose', '-f', str(compose), 'up', '-d', '--force-recreate', *services, cwd=compose.parent)
+        report.append({'project': folder, 'changed_files': count})
     if vault:
         atomic(ROOT / 'middleware-config-report.json', json.dumps({'action': args.action, 'projects': report, 'time': time.time()}, indent=2))
 

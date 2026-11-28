@@ -1,4 +1,4 @@
-"""Real Compose checks for the env-only synchronization contract."""
+"""Real Compose checks for individual middleware variables."""
 import importlib.util
 from pathlib import Path
 import tempfile
@@ -9,52 +9,52 @@ spec.loader.exec_module(m)
 with tempfile.TemporaryDirectory() as directory:
     root = Path(directory)
     m.ROOT = root
+    env = root / '.container-api.env'
+    env.write_text('TOKEN="fixture$$literal"\n')
+    other = root / '.container-worker.env'
+    other.write_text('TOKEN="different-worker-value"\n')
+    db = root / 'database.env'
+    db.write_text('POSTGRES_PASSWORD="fixture"\n')
     compose = root / 'compose.yml'
-    env = root / 'probe.env'
-    env.write_text('TOKEN="fixture$literal"\n')
-    compose.write_text('services:\n  probe:\n    image: busybox:1.37\n    env_file: [probe.env]\n')
+    compose.write_text('services:\n  api:\n    image: example/app:1\n    env_file: .container-api.env\n  worker:\n    image: example/app:1\n    env_file: .container-worker.env\n  database:\n    image: getlago/postgres-partman:15.0-alpine\n    env_file: database.env\n')
     (root / '.env').write_text('UNRELATED_PANEL_SETTING=fixture\n')
-    files = m.env_files(compose)
-    assert list(files.values()) == [env]
-    values = {key: m.env_text(path.read_text()) for key, path in files.items()}
-    assert m.apply_env(compose, values) == 0
-    print('PASS only explicitly referenced env files are selected')
+    assert m.variable_groups(compose, 'example') == {'example/api': env, 'example/worker': other}
+    assert set(m.env_files(compose, include_databases=True).values()) == {env, other, db}
+    assert m.env_values(env) == {'TOKEN': 'fixture$literal'}
+    print('PASS service folders isolate duplicate variable names and exclude database env')
+    values = {'TOKEN': 'quote" dollar$ slash\\ newline\nnext', 'EMPTY': '', 'PADDED': ' padded '}
+    assert m.apply_variables(compose, env, values, True) == 1
+    assert m.env_values(env) == values
+    assert m.apply_variables(compose, env, values, True) == 0
+    assert m.env_values(other) == {'TOKEN': 'different-worker-value'}
+    print('PASS individual values round-trip quotes, dollars, multiline, empty and whitespace')
     try:
-        m.apply_env(compose, {**values, 'COMPOSE_YAML': 'invalid'}, True)
-        raise AssertionError('Non-env config was accepted')
+        m.apply_variables(compose, env, {'INVALID-KEY': 'fixture'}, True)
+        raise AssertionError('Invalid variable name accepted')
     except RuntimeError:
-        print('PASS non-env vault entries rejected')
-    bad = {key: 'TOKEN="unterminated' for key in files}
+        assert m.env_values(env) == values
+    print('PASS invalid variable names rejected before file writes')
+    original = env.read_text()
+    real_definition = m.definition
+    def fail_definition(path, unresolved=False):
+        if path == compose:
+            raise RuntimeError('fixture configuration failure')
+        return real_definition(path, unresolved)
+    m.definition = fail_definition
     try:
-        m.apply_env(compose, bad, True)
-        raise AssertionError('Invalid dotenv accepted')
-    except Exception:
-        assert env.read_text() == values[next(iter(files))] + '\n'
-        print('PASS invalid dotenv rolled back')
-    good = {key: 'TOKEN="new-fixture"' for key in files}
-    assert m.apply_env(compose, good, True) == 1
-    assert m.apply_env(compose, good, True) == 0
-    print('PASS valid env update is idempotent')
-
+        m.apply_variables(compose, env, {'TOKEN': 'changed'}, True)
+        raise AssertionError('Invalid compose accepted')
+    except RuntimeError:
+        assert env.read_text() == original
+    finally:
+        m.definition = real_definition
+    print('PASS failed Compose validation restores the original env file')
     runtime = root / 'runtime'
     runtime.mkdir()
     for service in ['flexprice', 'temporal']:
-        (runtime / (service + '.env')).write_text('TOKEN="' + service + '-fixture"\n')
+        (runtime / (service + '.env')).write_text('TOKEN="' + service + '"\n')
     shared = root / 'data.yml'
-    shared.write_text('services:\n  flexprice:\n    image: busybox:1.37\n    env_file: runtime/flexprice.env\n  temporal:\n    image: busybox:1.37\n    env_file: runtime/temporal.env\n')
-    flex = m.env_files(shared, 'flexprice')
-    temporal = m.env_files(shared, 'temporal')
-    assert list(flex.values()) == [runtime / 'flexprice.env']
-    assert list(temporal.values()) == [runtime / 'temporal.env']
-    before_temporal = (runtime / 'temporal.env').read_text()
-    assert m.apply_env(shared, {key: 'TOKEN="new-flex"' for key in flex}, True, 'flexprice') == 1
-    assert (runtime / 'temporal.env').read_text() == before_temporal
-    print('PASS shared-stack middleware folders update only their own env file')
-
-    database = root / 'database.env'
-    database.write_text('POSTGRES_PASSWORD="fixture"\n')
-    mixed = root / 'mixed.yml'
-    mixed.write_text('services:\n  api:\n    image: example/app:1\n    env_file: probe.env\n  database:\n    image: getlago/postgres-partman:15.0-alpine\n    env_file: database.env\n')
-    assert list(m.env_files(mixed).values()) == [env]
-    assert set(m.env_files(mixed, include_databases=True).values()) == {env, database}
-    print('PASS embedded database env excluded from vault but retained for backup')
+    shared.write_text('services:\n  flexprice:\n    image: example/app:1\n    env_file: runtime/flexprice.env\n  temporal:\n    image: example/app:1\n    env_file: runtime/temporal.env\n')
+    assert m.variable_groups(shared, 'flexprice') == {'flexprice': runtime / 'flexprice.env'}
+    assert m.variable_groups(shared, 'temporal') == {'temporal': runtime / 'temporal.env'}
+    print('PASS shared-stack services retain independent vault folders')
