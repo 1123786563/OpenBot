@@ -48,3 +48,9 @@
 ## Flexprice public HTTPS update — 2026-11-28
 
 `https://flexprice.persaas.cn/` now serves the console. TLS validation, HTTP redirect, public native authentication and environment-scoped APIs passed. The browser login page loaded successfully. Certificate renewal and configuration backup coverage were updated; the site is now a 1Panel-managed proxy website (ID 54, Running), with certificate association and HTTP-to-HTTPS redirect. The panel API search and public HTTPS returned 200 after migration. Earlier missing-DNS statements describe the previous acceptance run.
+
+## CubeSandbox API 密钥接入 — 2026-11-28
+
+用户提供的现有密钥已保存到 Persaas Runtime/prod 的 `/server`、`/worker`，使用应用实际读取的 `OPENBOT_CUBE_API_KEY`，API 地址为 `https://sandboxes.persaas.cn`。密钥未写入仓库。两服务已重新创建；应用子进程加载密钥后，请求 `/templates` 均返回 200（5 个模板）。A 上还验证 `/sandboxes`、`/volumes` 返回 200，可见 READY 浏览器模板和两个既有测试卷。主站返回 200，API 容器健康。未登录或修改 CubeSandbox 主机。
+
+这次只完成 API 凭据接入：运行配置尚缺浏览器模板选择、browser/envd 数据通道地址、签名密钥及用户专属卷绑定，不能据此宣称浏览器功能已可用，也未复用已有测试卷。
