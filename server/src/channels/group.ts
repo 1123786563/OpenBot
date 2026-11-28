@@ -227,9 +227,10 @@ export function createGroupStore(
           status: directChatRuns.status,
           externalOutcome: directChatRuns.externalOutcome,
           stopReason: directChatRuns.stopReason,
-          partialReply: sql<
-            string | null
-          >`case when ${directChatRuns.stopReason} = ${CONTEXT_REVOKED} then ${directChatRuns.partialReply} end`,
+          partialReply: sql<string | null>`case
+            when ${directChatRuns.stopReason} = ${CONTEXT_REVOKED} then ${directChatRuns.partialReply}
+            when ${directChatRuns.externalOutcome} = 'executed' then ${directChatRuns.reply}
+          end`,
           waitingApprovalId: directChatRuns.waitingApprovalId,
           startedAt: directChatRuns.startedAt,
         })
