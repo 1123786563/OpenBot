@@ -1,8 +1,13 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { eq } from "drizzle-orm";
+import { createApp } from "../src/app";
 import { createAuditReader } from "../src/audit";
+import { createRoleRepository } from "../src/auth/guards";
+import { loadConfig } from "../src/config";
 import { createDatabase } from "../src/db/client";
-import { auditEvents } from "../src/db/schema";
+import { auditEvents, userRoles, users } from "../src/db/schema";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
+import { testEnvironment } from "./support/environment";
 
 /**
  * The Audit page's text search across the whole trail, asked of the database that answers it.
@@ -123,4 +128,65 @@ describe("the trail's text search", () => {
     const percent = await reader.list({ targetId, limit: 10, q: "100%" });
     expect(percent.events.map((event) => event.payload.note)).toEqual(["100%"]);
   });
+});
+
+test("Audit lists and exports the same older match and honors a role downgrade", async () => {
+  const id = unique("audit-admin");
+  const user = { id, email: `${id}@openbot.test` };
+  const targetId = unique("audit-http-search");
+  const term = "papertrail";
+  const app = createApp(
+    loadConfig(testEnvironment()),
+    {
+      handler: () => new Response(null, { status: 204 }),
+      api: { getSession: async () => ({ user }) },
+    },
+    createRoleRepository(database),
+    reader,
+  );
+
+  const path = `/api/admin/audit-events?targetId=${targetId}&limit=1`;
+  const search = `${path}&q=${term}`;
+  const exportUrl = `${search}&format=csv`;
+  try {
+    await database
+      .insert(users)
+      .values({ ...user, name: "Audit administrator" });
+    await database.insert(userRoles).values({ userId: id, role: "admin" });
+    await seed(targetId, [
+      { at: "2026-06-01T00:00:00Z", payload: { note: term } },
+      { at: "2026-06-02T00:00:00Z", payload: { note: "newest-other-row" } },
+    ]);
+
+    const newest = await app.request(path);
+    expect(newest.status).toBe(200);
+    const page = await newest.text();
+    expect(page).toContain("newest-other-row");
+    expect(page).not.toContain(term);
+
+    const matching = await app.request(search);
+    expect(matching.status).toBe(200);
+    const json = await matching.text();
+    expect(json).toContain(term);
+    expect(json).not.toContain("newest-other-row");
+
+    const exported = await app.request(exportUrl);
+    expect(exported.status).toBe(200);
+    expect(exported.headers.get("content-type")).toContain("text/csv");
+    const csv = await exported.text();
+    expect(csv).toContain(term);
+    expect(csv).not.toContain("newest-other-row");
+
+    await database
+      .update(userRoles)
+      .set({ role: "user" })
+      .where(eq(userRoles.userId, id));
+    for (const route of [search, exportUrl]) {
+      const denied = await app.request(route);
+      expect(denied.status).toBe(403);
+      expect(await denied.text()).not.toContain(term);
+    }
+  } finally {
+    await database.delete(users).where(eq(users.id, id));
+  }
 });
