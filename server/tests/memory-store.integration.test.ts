@@ -1286,16 +1286,25 @@ test.skipIf(!managedReflectUrl || !managedReflectPort || !syntheticModelUrl)(
         expect(route).toMatchObject({ id: routeId, provider: "fixture" });
         expect(operations.has(operationId)).toBe(false);
         operations.add(operationId);
-        const [schemaMessage, ...prompt] = messages;
-        if (schemaMessage?.role !== "system")
-          throw new Error("Missing Reflect schema");
-        const schema = JSON.parse(schemaMessage.content.split("\n")[1]);
+        const [first, ...prompt] = messages;
+        const schemaPrefix = "Return only JSON conforming to this schema:\n";
+        const body =
+          first?.role === "system" && first.content.startsWith(schemaPrefix)
+            ? {
+                messages: prompt,
+                response_format: {
+                  type: "json_schema",
+                  json_schema: {
+                    schema: JSON.parse(
+                      first.content.slice(schemaPrefix.length),
+                    ),
+                  },
+                },
+              }
+            : { messages };
         const provider = await fetch(syntheticModelUrl, {
           method: "POST",
-          body: JSON.stringify({
-            messages: prompt,
-            response_format: { type: "json_schema", json_schema: { schema } },
-          }),
+          body: JSON.stringify(body),
         });
         if (!provider.ok) throw new Error("Reflect model fixture failed");
         const completion = await provider.json();
