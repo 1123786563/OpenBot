@@ -281,8 +281,8 @@ function StartHandoff({ owner, startId }: { owner: string; startId: string }) {
                 ) : null}
                 {draft.attachments.length > 0 ? (
                   <Text as="p" color="secondary" size="sm">
-                    You can attach the files again after the new conversation
-                    opens.
+                    You can add the saved files to the new conversation before
+                    sending.
                   </Text>
                 ) : null}
                 <Stack direction="horizontal" gap={2} wrap="wrap">
@@ -307,9 +307,7 @@ function StartHandoff({ owner, startId }: { owner: string; startId: string }) {
                           newConversation,
                           copiedFromHome: true,
                           copiedFromStart: true,
-                          attachmentNames: draft.attachments.map(
-                            ({ name }) => name,
-                          ),
+                          copiedStartId: startId,
                         },
                       });
                     }}
