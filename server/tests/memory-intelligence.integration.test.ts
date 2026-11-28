@@ -402,6 +402,60 @@ test("a memory only Intelligence holds is the person's own: recalled, edited and
   expect(JSON.stringify(forgotten)).not.toContain("emacs keybindings");
 });
 
+test("a failed remote forget stays hidden and a new worker retires it without a second Audit row", async () => {
+  const remoteId = fake.seed(ada, "A fact to forget");
+  const id = `intelligence:${remoteId}`;
+  const auditCount = async () =>
+    (
+      await database
+        .select({ id: auditEvents.id })
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.actorUserId, ada),
+            eq(auditEvents.targetId, id),
+            sql`${auditEvents.payload}->>'change' = 'memory_deleted'`,
+          ),
+        )
+    ).length;
+  const before = await auditCount();
+
+  fake.state.failRemove = true;
+  await expect(store.remove(ada, id)).rejects.toBeInstanceOf(
+    MemoryUnavailableError,
+  );
+  expect(fake.live(ada)).toHaveLength(1);
+  expect((await store.list(ada)).map((memory) => memory.id)).not.toContain(id);
+  expect(
+    (await store.retrieve(ada, [], "fact")).map((memory) => memory.id),
+  ).not.toContain(id);
+  expect(await auditCount()).toBe(before + 1);
+
+  fake.state.failRemove = false;
+  const restarted = createMemoryStore(database, {
+    intelligence: createIntelligenceMemory({
+      client: fake.client,
+      now: () => clock,
+      log: () => {},
+    }),
+  });
+  await restarted.mirrorPending();
+  expect(fake.live(ada)).toEqual([]);
+  await restarted.remove(ada, id);
+  expect(await auditCount()).toBe(before + 1);
+});
+
+test("a person cannot queue a forget for somebody else's Intelligence memory", async () => {
+  const id = fake.seed(grace, "Grace's private fact");
+  await expect(store.remove(ada, `intelligence:${id}`)).rejects.toBeInstanceOf(
+    MemoryNotFoundError,
+  );
+  expect(fake.live(grace)).toHaveLength(1);
+  expect(fake.calls.filter((call) => call.method === "removeMemory")).toEqual(
+    [],
+  );
+});
+
 test("a memory OpenBot describes cannot be forgotten through its Intelligence id", async () => {
   const memory = await store.create(ada, { content: "Has a dog" });
   const linked = (await rowOf(memory.id))?.intelligenceMemoryId;
