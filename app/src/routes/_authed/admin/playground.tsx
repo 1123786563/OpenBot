@@ -339,8 +339,8 @@ function PlaygroundPage() {
               textWrap="pretty"
               className="max-w-prose leading-relaxed"
             >
-              Edit and preview a component here. Bots show the published version
-              in conversations.
+              Save draft adds the component to Saved here. Bots can show the
+              component in conversations after you publish it.
             </Text>
           </VStack>
         </HStack>
