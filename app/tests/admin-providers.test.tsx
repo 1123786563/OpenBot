@@ -395,7 +395,11 @@ test("provider and usage stay visible when the settings read fails", async () =>
   );
 
   const view = await draw(ProvidersPage);
-  await view.findByText("Couldn't load these settings.", {}, { timeout: 5000 });
+  await view.findByText(
+    "Couldn't load conversation and allowed model settings.",
+    {},
+    { timeout: 5000 },
+  );
   expect(
     view.getByText("Default gpt-5.6-terra · 3 models listed"),
   ).toBeTruthy();
@@ -494,7 +498,7 @@ test("a failed allowlist save keeps the dialog, selection and a focused error", 
   expect(picked.getAttribute("aria-checked")).toBe("true");
 
   fail = false;
-  fireEvent.click(save);
+  fireEvent.click(view.getByRole("button", { name: "Retry save" }));
   await view.findByText("Allowed models saved");
   expect(view.queryByRole("dialog")).toBeNull();
 });
