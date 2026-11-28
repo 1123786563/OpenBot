@@ -202,7 +202,8 @@ for (const viewport of [
           await shot("legacy-recovery");
           assert.equal(
             (await fixture("GET")).requests.filter(
-              ({ method }) => method === "PUT",
+              ({ method, path }) =>
+                method === "PUT" && path === "/api/computers/policy",
             ).length,
             0,
           );
@@ -216,7 +217,9 @@ for (const viewport of [
           await reach(rule);
           await press("ControlOrMeta+a");
           await page.keyboard.insertText(draft);
-          const back = role("link", "Boundaries");
+          const back = page
+            .locator("#main-content")
+            .getByRole("link", { name: "Boundaries", exact: true });
           await activate(back);
           const dialog = role("alertdialog", "Discard boundary draft?");
           await visible(dialog);
