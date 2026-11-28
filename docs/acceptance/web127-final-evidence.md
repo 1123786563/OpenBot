@@ -120,6 +120,13 @@ Firefox ESR 和 Orca 在主线构建 `bbbbe63fa` 的隔离 Team 环境验证了 
 
 同一构建的 Admin 概览在 Chromium 与 WebKit 通过 8 个键盘场景，覆盖桌面、窄屏、浅色和深色。搜索无结果时显示示例，Escape 清空，Enter 聚焦并打开 What if。返回后保留查询和结果焦点。另有 109 项 Web 与隔离 PostgreSQL 回归通过，覆盖 Audit 导出范围、Providers 保存失败、Learning 草稿和 Playground 焦点恢复。独立评分待完成。 [搜索场景](/Users/wuyj/.local/state/openbot-spec-127/evidence/admin-search-keyboard.Em4HO3/run.json) · [定向测试](/Users/wuyj/.local/state/openbot-spec-127/evidence/web192-admin-settings-regression.LKR4Wk/results.log)
 
+
+### 已合并流程的补充复验
+
+- #184 的网站登录回归在 Chromium 和 WebKit 的 390、1440 CSS 像素与浅深主题下各通过四项。验证码阶段刷新后仅显示验证码输入框，过期后用键盘返回原会话。测试使用隔离 API，未提交凭据。实际网站投递和接管待验。 [验收脚本 #276](https://github.com/1123786563/OpenBot/pull/276) · [Chromium](/Users/wuyj/.local/state/openbot-spec-127/evidence/web184-code-chromium.F75An0/run.json) · [WebKit](/Users/wuyj/.local/state/openbot-spec-127/evidence/web184-code-webkit.Y7escJ/run.json)
+- #189 在主线生产构建 `9f3de65b7` 上通过 Ideas 八项和 Tasks 四项隔离浏览器场景。Ideas 提交期间阻止重复操作，成功后提供可聚焦的直达会话链接。Tasks 在 320 CSS 像素下通过键盘取消、重试、字号及对比度检查；简体中文的完成提示和目标分组同名。真实 Bot 执行及实机播报待验。 [Ideas 实现 #280](https://github.com/1123786563/OpenBot/pull/280) · [Ideas 复验](/Users/wuyj/.local/state/openbot-spec-127/evidence/web189-main-9f3de6.I0FE6F/ideas/run.json) · [Tasks 复验](/Users/wuyj/.local/state/openbot-spec-127/evidence/web189-main-9f3de6.I0FE6F/tasks/run.json)
+- #192 在主线 `d4f66b14e` 的 Audit 页面及 PostgreSQL 联合回归通过 16 项。通过 HTTP 查询和导出首屏之外的同一历史记录后，降低测试账号的数据库权限，原模拟会话的两个请求都返回 403。另有八个隔离浏览器场景证实 503 保留旧记录、403 清除旧记录。真实身份供应商登录后的 Audit 验收待补。 [集成测试 #277](https://github.com/1123786563/OpenBot/pull/277) · [主线测试](/Users/wuyj/.local/state/openbot-spec-127/evidence/web192-audit-merged.8BgDOk/results.log) · [浏览器矩阵](/Users/wuyj/.local/state/openbot-spec-127/evidence/web192-audit-matrix.gwSkZL/browser.json)
+
 ## 逐页记录
 
 | ID | 视图与路由 | 模拟身份 | 捕获与具体缺口 | H1–H10 | 满分 |
