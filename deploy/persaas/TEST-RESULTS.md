@@ -47,4 +47,4 @@
 
 ## Flexprice public HTTPS update — 2026-11-28
 
-`https://flexprice.persaas.cn/` now serves the console. TLS validation, HTTP redirect, public native authentication and environment-scoped APIs passed. The browser login page loaded successfully. Certificate renewal and configuration backup coverage were updated; see `extensions/README.md` for the manual OpenResty site maintenance limitation. Earlier missing-DNS statements describe the previous acceptance run.
+`https://flexprice.persaas.cn/` now serves the console. TLS validation, HTTP redirect, public native authentication and environment-scoped APIs passed. The browser login page loaded successfully. Certificate renewal and configuration backup coverage were updated; the site is now a 1Panel-managed proxy website (ID 54, Running), with certificate association and HTTP-to-HTTPS redirect. The panel API search and public HTTPS returned 200 after migration. Earlier missing-DNS statements describe the previous acceptance run.

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Archive current 1Panel configuration in the administrator-only Infisical project; run as root on A."""
 import json
+import sqlite3
 from pathlib import Path
 import subprocess
 import urllib.error
@@ -10,7 +11,16 @@ import urllib.request
 ROOT = Path('/opt/persaas')
 
 
+def managed_flexprice_site(database='/opt/1panel/db/agent.db'):
+    with sqlite3.connect('file:' + str(database) + '?mode=ro', uri=True) as db:
+        row = db.execute('SELECT id, primary_domain, type, status, website_ssl_id FROM websites WHERE primary_domain = ?', ('flexprice.persaas.cn',)).fetchone()
+    if not row or row[2] != 'proxy' or row[3] != 'Running' or not row[4]:
+        raise RuntimeError('Create and enable HTTPS for flexprice.persaas.cn in 1Panel Websites before archiving; standalone vhost files are insufficient')
+    return dict(zip(['id', 'domain', 'type', 'status', 'certificateId'], row))
+
+
 def main():
+    site = managed_flexprice_site()
     credentials = json.loads((ROOT / 'credentials.json').read_text())
     token = ''
 
@@ -68,7 +78,7 @@ def main():
         archive(name, values)
     archive('entry-proxy', {'OPENBOT_PROXY_CONFIG': Path('/opt/1panel/1panel/www/sites/www.persaas.cn/proxy/root.conf').read_text()})
     archive('openobserve', {'ADMIN_EMAIL': credentials['openobserveEmail'], 'ADMIN_PASSWORD': credentials['openobservePassword']})
-    archive('flexprice-admin', {'ADMIN_EMAIL': credentials['adminEmail'], 'ADMIN_PASSWORD': credentials['flexpriceOwnerPassword'], 'CONSOLE_LOCAL_URL': 'http://127.0.0.1:18085', 'CONSOLE_PUBLIC_URL': 'https://flexprice.persaas.cn', 'HTTPS_VHOST_CONFIG': Path('/opt/1panel/1panel/www/conf.d/flexprice.persaas.cn.conf').read_text(), 'HTTPS_PROXY_CONFIG': Path('/opt/1panel/1panel/www/sites/flexprice.persaas.cn/proxy/root.conf').read_text(), 'FRONTEND_VERSION': 'v2.0.22'})
+    archive('flexprice-admin', {'PANEL_WEBSITE_JSON': json.dumps(site), 'ADMIN_EMAIL': credentials['adminEmail'], 'ADMIN_PASSWORD': credentials['flexpriceOwnerPassword'], 'CONSOLE_LOCAL_URL': 'http://127.0.0.1:18085', 'CONSOLE_PUBLIC_URL': 'https://flexprice.persaas.cn', 'HTTPS_VHOST_CONFIG': Path('/opt/1panel/1panel/www/conf.d/flexprice.persaas.cn.conf').read_text(), 'HTTPS_PROXY_CONFIG': Path('/opt/1panel/1panel/www/sites/flexprice.persaas.cn/proxy/root.conf').read_text(), 'FRONTEND_VERSION': 'v2.0.22'})
 
 
 if __name__ == '__main__':
