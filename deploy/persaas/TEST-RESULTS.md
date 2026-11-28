@@ -122,3 +122,14 @@ No production restart was required because the current configuration already mat
 Operational instructions: [BILLING-INTEGRATION.md](BILLING-INTEGRATION.md).
 
 Final health checks: data and app `check.sh` exited 0; no unhealthy container on the data node; app API healthy, Worker running for 16 minutes with zero restarts. Flexprice Infrastructure/runtime comparison reported zero changed env files.
+
+## Local Flexprice source deployment — 2026-11-28 14:17 CST
+
+- Published Linux amd64 server/migrate built from `/Users/wuyj/IdeaProjects/flexprice` at `d7d5c1120`; production SHA-256 matches local artifact `06f5e44c0d3f361b027fc29253376f98f32c8f069581d4564c5b22218598cb08`.
+- Published production frontend built from `/Users/wuyj/IdeaProjects/flexprice-front` at `70a95c83` including existing uncommitted working-tree changes. Those changes were preserved. Frontend build/typecheck and 26 selected tests passed; backend config tests passed.
+- All 121 deployed migration files match local source byte-for-byte. No schema migration was necessary. Flexprice PostgreSQL and previous Compose were backed up before replacement.
+- New API/frontend images run with zero restarts. Middleware env check reported zero differences for every managed folder; signup disabled in Infrastructure and running backend env.
+- Middleware acceptance passed all 16 checks: authenticated Bifrost inference, Opik trace ingestion/readback, Lago login/API, Flexprice login/customer API, OpenObserve ingestion/search, RustFS round trips, and anonymous access rejection. Main-site acceptance passed all 12 checks again. Application node health and Worker flush passed with unavailable=false/paused=0.
+- New 19-microcredit acceptance event persisted on the local-source release. SUM moved from 17 to 36; replay remained 36, proving Kafka/ClickHouse processing and deduplication after the upgrade.
+- Browser opened `https://flexprice.persaas.cn/auth` and `https://www.persaas.cn/`; both login pages rendered, including the Casdoor button on OpenBot. Browser login itself was not performed; authenticated HTTP acceptance was performed separately.
+- Temporary deployment SSH key removed from the server and local private key deleted after verification.

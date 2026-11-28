@@ -62,3 +62,17 @@ docker compose -f /opt/persaas/apps.yml run --rm --no-deps -T worker bun --no-en
 检查投递状态，并在 Flexprice 查询原始事件和 SUM 聚合值。重复提交相同事件 ID 后，聚合值应保持不变。普通主站聊天验收与计费投递验收是不同检查；只有进入 OpenBot 结算账本的用量才会导出，不能把任意网关调用都当作已计费事件。
 
 回滚 Worker 时保留迁移表和事件记录，恢复原 Worker 镜像及原 Runtime 导出配置。提供商修改前的备份仅保存在入口节点 `/opt/persaas/backups/`，其中可能包含私密配置，禁止提交仓库。
+
+## 使用本地 Flexprice 源码发布
+
+部署源码固定来自 `/Users/wuyj/IdeaProjects/flexprice` 和 `/Users/wuyj/IdeaProjects/flexprice-front`。前端构建包含当前工作目录改动，不修改或提交该仓库已有的未提交文件。
+
+```sh
+./deploy/persaas/build-flexprice-local.sh /absolute/empty-release-directory
+```
+
+该脚本交叉编译 Linux amd64 后端和迁移工具，构建前端，并打包两个镜像的构建目录。后端基础镜像复用现有 Alpine、Typst、dbmate 和系统依赖；运行的 server/migrate、默认配置、assets 和 migrations 来自本地源码。前端使用 Nginx 托管生产 dist，不运行 Vite 开发服务器。打包结果不包含仓库 `.env`。
+
+将 `release.tar.gz` 上传入口节点，解包后分别执行 `docker build`，以新标签更新 `data.yml`，保留 `runtime/flexprice.env` 和前端反向代理配置挂载。前端 dist 已包含在镜像里，不再挂载旧版 `flexprice-ui-dist`。先备份数据库和 Compose，再核对迁移差异；只有新增迁移时才执行经核对的迁移工具。
+
+2026-11-28 本次后端源提交为 `d7d5c1120`，前端为 `70a95c83` 加当前工作目录改动；运行镜像分别为 `flexprice:persaas-local-d7d5c1120`、`flexprice-front:persaas-local-70a95c83`。Infrastructure `/flexprice` 的 `FLEXPRICE_AUTH_DISABLE_SIGNUP=true` 关闭后端注册入口。发布清单与回滚 Compose 位于服务器 `/opt/persaas/releases/local-flexprice-20261128/` 和 `/opt/persaas/backups/`。
