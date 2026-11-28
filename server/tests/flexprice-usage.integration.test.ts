@@ -92,14 +92,11 @@ test("Flexprice delivery survives outage and async ingest without changing Lago 
       },
       cutover,
     );
-    expect(await accepted.flush()).toEqual(
-      {
-        sent: 1,
-        paused: 0,
-        unavailable: false,
-      },
-      cutover,
-    );
+    expect(await accepted.flush()).toEqual({
+      sent: 1,
+      paused: 0,
+      unavailable: false,
+    });
     expect(await accepted.flush()).toEqual({
       sent: 0,
       paused: 0,
@@ -125,14 +122,11 @@ test("Flexprice delivery survives outage and async ingest without changing Lago 
       },
       cutover,
     );
-    expect(await conflict.flush()).toEqual(
-      {
-        sent: 0,
-        paused: 1,
-        unavailable: false,
-      },
-      cutover,
-    );
+    expect(await conflict.flush()).toEqual({
+      sent: 0,
+      paused: 1,
+      unavailable: false,
+    });
     expect(await conflict.flush()).toEqual({
       sent: 0,
       paused: 0,
