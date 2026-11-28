@@ -36,8 +36,24 @@ import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { appConfig } from "@/lib/generated/application-config";
 
 let lastOpenedBot:
-  | { historyEntry: string; href: string; hidden: boolean }
+  | {
+      historyEntry: string;
+      historyIndex: number;
+      href: string;
+      hidden: boolean;
+      search: string;
+    }
   | undefined;
+
+export function previousBotRoster(agentId: string, historyIndex: number) {
+  const previous = lastOpenedBot;
+  if (
+    previous?.href === `/bots/${encodeURIComponent(agentId)}` &&
+    previous.historyIndex + 1 === historyIndex
+  ) {
+    return { search: previous.search };
+  }
+}
 
 /**
  * Every Bot the person can reach, in the one place they are listed: what needs the person first,
@@ -68,6 +84,9 @@ export function BotRoster({
   const directory = useRef<HTMLElement>(null);
   const historyEntry = useLocation({
     select: (location) => location.state.__TSR_key,
+  });
+  const historyIndex = useLocation({
+    select: (location) => location.state.__TSR_index,
   });
   const agents = useQuery(agentListQueryOptions());
   const hidden = useQuery(agentListQueryOptions(true));
@@ -120,6 +139,8 @@ export function BotRoster({
     if (href?.startsWith("/bots/")) {
       lastOpenedBot = {
         historyEntry,
+        historyIndex,
+        search,
         href,
         hidden:
           hidden.data?.some(

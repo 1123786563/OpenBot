@@ -46,7 +46,7 @@ export function PageShell({
   title: string;
   width?: ShellWidth;
   backButton?: {
-    linkProps: LinkProps;
+    linkProps: LinkProps & Pick<React.ComponentProps<typeof Link>, "onClick">;
     label: string;
   };
 }) {

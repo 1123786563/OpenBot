@@ -3,6 +3,7 @@ import {
   createFileRoute,
   useLocation,
   useNavigate,
+  useRouter,
 } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import {
@@ -13,6 +14,7 @@ import { BotDetailSurface } from "@/components/bot-profile/detail-surface";
 import { ManageSection } from "@/components/bot-profile/manage";
 import { BotProfile } from "@/components/bot-profile/profile";
 import { BotSettingsRows } from "@/components/bot-profile/settings-rows";
+import { previousBotRoster } from "@/components/bots/bot-roster";
 import { PageShell } from "@/components/layout/page-shell";
 import { agentQueryOptions } from "@/lib/agents/queries";
 
@@ -23,6 +25,11 @@ export const Route = createFileRoute("/_authed/_app/bots/$agentId/")({
 function BotProfilePage() {
   const { agentId } = Route.useParams();
   const navigate = useNavigate();
+  const router = useRouter();
+  const historyIndex = useLocation({
+    select: (location) => location.state.__TSR_index,
+  });
+  const previousRoster = previousBotRoster(agentId, historyIndex);
   const agent = useQuery(agentQueryOptions(agentId));
   const createdBotId = useLocation({
     select: (location) => location.state.createdBotId,
@@ -41,7 +48,27 @@ function BotProfilePage() {
   return (
     <BotDetailSurface>
       <PageShell
-        backButton={{ label: "Bots", linkProps: { to: "/bots" } }}
+        backButton={{
+          label: "Bots",
+          linkProps: {
+            to: "/bots",
+            search: { q: previousRoster?.search || undefined },
+            onClick: (event) => {
+              if (
+                !previousRoster ||
+                event.defaultPrevented ||
+                event.button !== 0 ||
+                event.altKey ||
+                event.ctrlKey ||
+                event.metaKey ||
+                event.shiftKey
+              )
+                return;
+              event.preventDefault();
+              router.history.back();
+            },
+          },
+        }}
         headingRef={heading}
         // No description: the Bot's own role, under its orb just below, says what this page is about.
         title={unavailable ? "Bot unavailable" : (agent.data?.name ?? "Bot")}
