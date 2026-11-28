@@ -8,6 +8,7 @@ import {
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Fragment } from "react";
 import { PageRows } from "@/components/layout/page-shell";
+import { ReadError } from "@/components/layout/read-status";
 import { Button } from "@/components/ui/button";
 import {
   Item,
@@ -87,10 +88,7 @@ export function SetupChecklist({
     <Button
       className="min-h-11 self-center lg:self-start"
       disabled={checking}
-      onClick={() => {
-        if (checklist.error) void checklist.refetch();
-        else recheck.mutate();
-      }}
+      onClick={() => recheck.mutate()}
       size="sm"
       variant="outline"
     >
@@ -125,12 +123,12 @@ export function SetupChecklist({
           </PageRows>
         </div>
       ) : checklist.error ? (
-        <>
-          <p className="text-sm text-destructive" role="alert">
-            Couldn't check your setup. Check again.
-          </p>
-          {checkAgain}
-        </>
+        <ReadError
+          message="Couldn't check your setup."
+          retry={checklist.refetch}
+          retryLabel="Check again"
+          retrying={checklist.isFetching}
+        />
       ) : (
         <>
           <p className="text-sm text-muted-foreground" role="status">
