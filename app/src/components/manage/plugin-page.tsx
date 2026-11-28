@@ -832,7 +832,7 @@ export function PluginPage({
                 <ItemTitle>
                   {personal ? "Turned on" : "Enable for this deployment"}
                 </ItemTitle>
-                <ItemDescription>
+                <ItemDescription className="line-clamp-none">
                   {personal
                     ? "Your Bots can use its tools. Turning this off removes it and every Bot's access to its tools."
                     : server
