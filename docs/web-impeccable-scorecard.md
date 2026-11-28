@@ -1805,3 +1805,16 @@ Connections 清单单列内置调度工具，Routines 不进入外部应用数�
 | `/admin/providers` | `2eff44601` | 隔离 Team 管理员 | 2 2 3 3 3 3 3 3 3 3 | 28/40 | 保存失败保留选项；读取失败文案没有点明受影响的区域。手动输入模型 ID 缺少就近示例。 |
 
 独立自动检测覆盖 44 个 Chromium 状态样本，含桌面和窄屏、浅色和深色、读取失败与恢复。未检测到页面异常。检测器报告 15 项嵌套卡片提示、6 项窄屏孤词提示，以及 Audit 浅色历史解释中的 2 项低对比度提示。正式验收仍为 0/88。 [概览检测](/Users/wuyj/.local/state/openbot-spec-127/evidence/web192-detector.LUZvII/overview/scans.json) · [Audit 检测](/Users/wuyj/.local/state/openbot-spec-127/evidence/web192-detector.LUZvII/audit/scans.json) · [Providers 检测](/Users/wuyj/.local/state/openbot-spec-127/evidence/web192-detector.LUZvII/providers/scans.json)
+
+### #192 Settings 独立复评
+
+| 视图 | H1–H10 | 暂定分 | 主要发现 |
+| --- | --- | --- | --- |
+| Notifications | 3 · 3 · 3 · 3 · 3 · 3 · 3 · 3 · 4 · 3 | 31/40 | 失败行可重试，保留同时更新的其他渠道；窄屏的说明和开关行较长。 |
+| Learning | 3 · 2 · 3 · 3 · 3 · 3 · 3 · 3 · 3 · 2 | 28/40 | 重试后焦点回到 Conversation Learning；无记录时缺少如何开始第一条 Learning 会话的说明。 |
+| General | 3 · 3 · 3 · 3 · 3 · 3 · 3 · 3 · 4 · 3 | 31/40 | 读取失败时隐藏保存，恢复后回到编辑框；消息列表预览时间戳对比度不足。 |
+| Setup | 3 · 3 · 3 · 2 · 3 · 3 · 3 · 3 · 3 · 3 | 29/40 | 清单读取失败可原位恢复；重新读取和主动诊断共用 Check again 文案。 |
+
+独立自动检测包含 Chromium 在 390×844 和 1440×900、浅色和深色下的 44 个状态。没有页面脚本错误。检测共报 116 条警告，包括 80 条小字号、24 条嵌套容器，以及同一个 General 预览时间戳在不同状态重复出现的 12 条低对比度警告。时间戳整改前的对比度为浅色 2.8:1、深色 3.9:1。四个视图均有隔离的浏览器键盘和 Firefox ESR + Orca 读取恢复记录。
+
+移除共享会话行时间戳的半透明前景后，General 预览在 Chromium 和 WebKit 的两种尺寸及主题共八组均达到 4.5:1。实测浅色为 5.04:1，深色为 7.02:1。表中仍保留独立评审原始分数。
