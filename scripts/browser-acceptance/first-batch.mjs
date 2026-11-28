@@ -119,6 +119,30 @@ async function keyboard(page, width, record) {
   const stop = await open("Stop computers");
   assert.match(await dialog.innerText(), /Disks are kept/);
   await capture("stop-preview");
+  const focusLoop = [];
+  for (const key of ["Tab", "Shift+Tab"]) {
+    const stops = [];
+    for (let step = 0; step < 6; step++) {
+      await page.keyboard.press(key);
+      stops.push(
+        await dialog.evaluate((element) => {
+          const focused = document.activeElement;
+          return {
+            contained: element.contains(focused),
+            label: focused?.textContent?.trim(),
+          };
+        }),
+      );
+    }
+    assert(
+      stops.every(({ contained }) => contained),
+      `${key} left the dialog`,
+    );
+    assert(stops.some(({ label }) => label === "Cancel"));
+    assert(stops.some(({ label }) => label === "Stop computers"));
+    focusLoop.push({ key, stops });
+  }
+  record.steps.push({ focusLoop });
   await page.keyboard.press("Escape");
   await dialog.waitFor({ state: "hidden" });
   await page.waitForFunction(
