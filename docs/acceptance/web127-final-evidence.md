@@ -102,7 +102,7 @@ Chromium 和 WebKit 各验证了首次使用的进度保存、完成保存与预
 
 ### #180 审批有效期复验
 
-主线 `e94fe7f4c` 合入后，在隔离 PostgreSQL 重跑四项测试。待批请求在 Run 仍进行时保留，不按经过时间过期。Run 完成、失败或停止后，迟到的审批无法继续该 Run。语音触发工具的审批通过后，原 Run 只续跑一次。以上使用测试模型和持久化数据库，真实供应商流式回复与审批续跑仍待验。 [实现 #271](https://github.com/1123786563/OpenBot/pull/271) · [定向复验日志](/tmp/openbot-271-merged-approval-test.log)
+主线 `e94fe7f4c` 合入后，在隔离 PostgreSQL 重跑四项测试。待批请求在 Run 仍进行时保留，不按经过时间过期。Run 完成、失败或停止后，迟到的审批无法继续该 Run。语音触发工具的审批通过后，原 Run 只续跑一次。以上使用测试模型和持久化数据库，真实供应商流式回复与审批续跑仍待验。 [实现 #271](https://github.com/1123786563/OpenBot/pull/271) · [定向复验日志](/Users/wuyj/.local/state/openbot-spec-127/evidence/web180-main-postgres.WpVvau/results.log)
 
 ### #189 工作视图复验
 
