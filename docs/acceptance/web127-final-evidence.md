@@ -80,7 +80,9 @@ Chromium 和 WebKit 各验证了首次使用的进度保存、完成保存与预
 - 例行任务在独立 OpenBot API 和 PostgreSQL 中验证了三个角色的实际写入。Personal 管理员和两种 Team 角色分别收到一次 201，焦点回到列表标题，刷新后读回任务。Team 两条记录的所有者不同。 [Personal 记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/routine-browser-db.Ik2oB2/run.json) · [Team 记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/routine-team-browser.fydU7n/run.json)
 - 治理页面在桌面、390 和 320 CSS 像素各复跑浅色和深色，使用模拟 API 验证边界读取重试、并发保存和 People 的键盘确认。另有 95 项 Web 与 PostgreSQL 测试通过。 [治理矩阵](/Users/wuyj/.local/state/openbot-spec-127/evidence/governance-320.q9hGHS/run.json)
 
-- #187 在源码 `a0949919f` 上使用 Chromium headless shell 通过 9 项设备和凭据页面测试。测试覆盖两种部署版本及浅深外观、503 原位重试、403、操作触区和键盘流程。完整 Chromium 进程在本机提前退出，同一套测试改用 headless shell 后全部通过。另有 20 项本地 Computer 服务测试通过，覆盖浏览器进程替换后恢复登录、Recorder 和接管交还。两个 Google 外网场景跳过。原生桌面窗口、实体触屏及读屏仍待验。 [页面日志](/Users/wuyj/.local/state/openbot-spec-127/evidence/device-browser-regression.SUrH9v/device-pages.log) · [Computer 日志](/Users/wuyj/.local/state/openbot-spec-127/evidence/device-browser-regression.SUrH9v/computer-service.log)
+- #187 在源码 `a0949919f` 上使用 Chromium headless shell 通过 9 项设备和凭据页面测试。测试覆盖两种部署版本及浅深外观、503 原位重试、403、操作触区和键盘流程。完整 Chromium 进程在本机提前退出，同一套测试改用 headless shell 后全部通过。另有 20 项本地 Computer 服务测试通过，覆盖浏览器进程替换后恢复登录、Recorder 和接管交还。两个 Google 外网场景跳过。原生桌面窗口和实体触屏仍待验。读屏补测见下一条。 [页面日志](/Users/wuyj/.local/state/openbot-spec-127/evidence/device-browser-regression.SUrH9v/device-pages.log) · [Computer 日志](/Users/wuyj/.local/state/openbot-spec-127/evidence/device-browser-regression.SUrH9v/computer-service.log)
+
+- #187 在 Firefox ESR 与 Orca 中用隔离 API 复验五个设备视图的读取失败。按 Enter 原位重试后，Browser 回到 Teach a Bot 标题，Browsers 回到 Connected browsers，Personal 和 Team 的设备列表分别回到 Your Bots’ browsers 与 Computers in this deployment，Saved logins 回到页面标题。Saved logins 首轮缺少成功响应，启用空列表数据后复跑通过。原生设备、真实部署权限、实际扩展连接和独立评分仍待验。 [Browser](/Users/wuyj/.local/state/openbot-spec-127/evidence/orca-browser-status.QjO0OS) · [Browsers](/Users/wuyj/.local/state/openbot-spec-127/evidence/orca-connected-browsers.GvWD1n) · [设备列表](/Users/wuyj/.local/state/openbot-spec-127/evidence/orca-device-fleet.XeOs8s) · [Saved logins](/Users/wuyj/.local/state/openbot-spec-127/evidence/orca-saved-logins-restored.GbbQUL)
 
 - #185 在 Web 构建 `87bb5713a` 的 390×844 Chromium 中使用本地 Keycloak 登录 Team 管理员和成员。独立 OpenBot API 创建双 Bot 群聊，成员加入前读取为 404。管理员在浏览器添加成员后，成员可读取群聊并看到两位 Bot 和两位成员。成员移除创建者被拒绝。管理员确认移除成员后，成员请求恢复为 404，重新打开只显示恢复入口。 [群聊权限记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/group-team-members.8gMLMu/run.json) · [构建清单](/Users/wuyj/.local/state/openbot-spec-127/evidence/group-team-members.8gMLMu/manifest.json)
 
@@ -106,7 +108,7 @@ Chromium 和 WebKit 在三种宽度及浅深主题下通过 12 个 Tasks 并发�
 | `view-8` | Single-Bot conversation · `/channel/$channelId` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-9` | Group conversation · `/group/$channelId` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-10` | /bot · `/bot` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
-| `view-11` | /browser · `/browser` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
+| `view-11` | /browser · `/browser` | Personal | 4/4 首屏。另验状态读取失败后的键盘重试与标题焦点。独立评分待验 | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-12` | Bots list · `/bots` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-13` | Create Bot · `/bots?new=true` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-14` | Bot profile · `/bots/$agentId` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
@@ -146,7 +148,7 @@ Chromium 和 WebKit 在三种宽度及浅深主题下通过 12 个 Tasks 并发�
 | `view-48` | New boundary · `/admin/boundaries/new` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-49` | Admin components · `/admin/components/` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-50` | Component detail · `/admin/components/$name` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
-| `view-51` | Admin computers · `/admin/computers` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
+| `view-51` | Admin computers · `/admin/computers` | Team 管理员 | 4/4 首屏。另验 Team 空设备列表的读屏重试与标题焦点。独立评分待验 | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-52` | Admin credentials · `/admin/credentials` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-53` | New credential · `/admin/credentials/new` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-54` | Identity providers · `/admin/identity-providers` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
@@ -170,15 +172,15 @@ Chromium 和 WebKit 在三种宽度及浅深主题下通过 12 个 Tasks 并发�
 | `view-72` | Settings home · `/settings/` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-73` | Settings activity · `/settings/activity` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-74` | Settings approvals · `/settings/approvals` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
-| `view-75` | Browsers · `/settings/browsers` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
+| `view-75` | Browsers · `/settings/browsers` | Personal | 4/4 首屏。另验已连接浏览器列表的读屏重试与标题焦点。独立评分待验 | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-76` | Components gallery · `/settings/components-gallery/` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-77` | Component preview · `/settings/components-gallery/$name` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
-| `view-78` | Settings computer · `/settings/computer` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
+| `view-78` | Settings computer · `/settings/computer` | Personal | 4/4 首屏。另验 Personal 空设备列表的读屏重试与标题焦点。独立评分待验 | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-79` | Settings credentials · `/settings/credentials` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-80` | New saved login · `/settings/credentials/new` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-81` | Settings learning · `/settings/learning` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-82` | Notifications · `/settings/notifications` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
-| `view-83` | Passwords · `/settings/passwords` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
+| `view-83` | Passwords · `/settings/passwords` | Personal | 4/4 首屏。另验空列表读取失败与标题焦点恢复。独立评分待验 | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-84` | Setup · `/settings/setup` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-85` | Settings skills · `/settings/skills` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-86` | Settings skill detail · `/settings/skills/$slug` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
