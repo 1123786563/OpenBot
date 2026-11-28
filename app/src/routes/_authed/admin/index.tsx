@@ -182,11 +182,22 @@ function RouteComponent() {
 
 function PendingAccountRequests() {
   const { t } = useTranslation();
-  const requests = useQuery(sharedUseRequestsQueryOptions(true));
+  const options = sharedUseRequestsQueryOptions(true);
+  const requests = useQuery({
+    ...options,
+    refetchInterval: (query) =>
+      query.state.status === "error" ? false : options.refetchInterval,
+  });
   const heading = useRef<HTMLHeadingElement>(null);
   if (requests.isPending) return null;
   const pending = requests.data?.length ?? 0;
   if (!requests.error && pending === 0) return null;
+  const title = t("admin.overview.requests", "Shared account requests");
+  const count = t(
+    "admin.overview.requestsCount",
+    "{count, plural, one {# request needs review.} other {# requests need review.}}",
+    { count: pending },
+  );
 
   return (
     <PageSection
@@ -211,7 +222,11 @@ function PendingAccountRequests() {
         <PageRows>
           <Item
             render={
-              <Link to="/admin/approvals" hash="shared-account-requests" />
+              <Link
+                aria-label={`${title}. ${count}`}
+                to="/admin/approvals"
+                hash="shared-account-requests"
+              />
             }
             size="sm"
           >
@@ -219,16 +234,8 @@ function PendingAccountRequests() {
               <IconChecks />
             </ItemMedia>
             <ItemContent>
-              <ItemTitle>
-                {t("admin.overview.requests", "Shared account requests")}
-              </ItemTitle>
-              <ItemDescription className="text-sm">
-                {t(
-                  "admin.overview.requestsCount",
-                  "{count, plural, one {# request needs review.} other {# requests need review.}}",
-                  { count: pending },
-                )}
-              </ItemDescription>
+              <ItemTitle>{title}</ItemTitle>
+              <ItemDescription className="text-sm">{count}</ItemDescription>
             </ItemContent>
             <IconChevronRight className="size-4 shrink-0 text-muted-foreground" />
           </Item>

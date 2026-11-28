@@ -228,7 +228,9 @@ test("overview search offers examples and preserves keyboard focus through navig
     "Common tasks",
     "Routines",
   ]);
-  const pending = view.getByRole("link", { name: /Shared account requests/ });
+  const pending = view.getByRole("link", {
+    name: "Shared account requests. 1 request needs review.",
+  });
   expect(pending.textContent).toContain("1 request needs review.");
   expect(pending.getAttribute("href")).toBe(
     "/admin/approvals#shared-account-requests",
