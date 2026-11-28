@@ -10,7 +10,7 @@ services:
       driver: json-file
       options: {max-size: 10m, max-file: "3"}
   flexprice:
-    image: flexprice:2.1.52-persaas
+    image: flexprice:persaas-local-d7d5c1120
     restart: unless-stopped
     mem_limit: 1536m
     env_file: runtime/flexprice.env
@@ -20,19 +20,18 @@ services:
       temporal: {condition: service_started}
     logging: *logs
   flexprice-ui:
-    image: nginx:1.28-alpine
+    image: flexprice-front:persaas-local-70a95c83
     restart: unless-stopped
     mem_limit: 128m
     ports: ["127.0.0.1:18085:8080"]
     volumes:
-      - ./flexprice-ui-dist:/usr/share/nginx/html:ro
       - ./extensions/flexprice-ui.conf:/etc/nginx/conf.d/default.conf:ro
     networks: [panel]
     depends_on:
       flexprice: {condition: service_started}
     logging: *logs
   flexprice-migrate:
-    image: flexprice:2.1.52-persaas
+    image: flexprice:persaas-local-d7d5c1120
     profiles: [tools]
     env_file: runtime/flexprice.env
     networks: [panel]
