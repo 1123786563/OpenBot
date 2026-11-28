@@ -236,6 +236,21 @@ async function capture(browser, cases, role, width, theme) {
           .locator("#root > *")
           .first()
           .waitFor({ state: "attached", timeout: 5000 });
+        if (entry.heading) {
+          await page
+            .getByRole("heading", {
+              name: entry.heading,
+              level: 1,
+              exact: true,
+            })
+            .waitFor({ timeout: 5000 });
+        }
+        if (entry.description) {
+          await page
+            .getByText(entry.description, { exact: true })
+            .first()
+            .waitFor({ timeout: 5000 });
+        }
         if (entry.expected) {
           await page.waitForURL(
             (url) => url.pathname + url.search + url.hash === entry.expected,
