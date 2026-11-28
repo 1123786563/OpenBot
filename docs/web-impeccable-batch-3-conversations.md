@@ -133,6 +133,8 @@ PR #213 在本地 Personal 环境用 Chromium、OpenBot API 和隔离 PostgreSQL
 
 PR #228 的生产构建 `fe90f71ed` 用隔离 API 通过四组 Chromium 复验。1440×900 和 390×844 各跑浅色和深色。更换收件人后，读取原附件遇到 503 时可重试。成功后先在新草稿显示附件，发送时用新会话重新上传相同字节。原草稿仍保留原附件 ID。报告、截图和构建哈希位于 `~/.local/state/openbot-spec-127/evidence/attachment-handoff.wA8RS3/retest/`。 [PR #228](https://github.com/1123786563/OpenBot/pull/228) [复跑说明](../scripts/browser-acceptance/README.md)
 
+构建 `105c98736` 在隔离 Chromium 环境复跑同样的四组尺寸和主题。四组均在第二次读取时取回原附件，并在新会话上传相同内容，原草稿的附件引用保持可读。拒绝剪贴板写入后，焦点落在只读文本框，框内选中完整原文。12 项 Web 定向测试与 3 项 PostgreSQL 集成测试通过，覆盖同标签页临时草稿、请求标识重用、并发创建和中断后恢复。浏览器记录在 `~/.local/state/openbot-spec-127/evidence/first-attachment-current.Z0lF5x/evidence/run.json`，入口 HTML 的 SHA-256 为 `166c4c9879886db4fd791ef1c9a342c4b5f842927ebc1d3c360e451766965c46`。真实 Intelligence 网关断线重发仍待验。
+
 ## 单 Bot 会话首发重试复评
 
 生产构建 `index-CSQ8edEN.js` 与样式 `index-Cp7d8Tw_.css` 使用本地模拟 API。OpenBot 直聊在 Thread 可完整读取且原纯文本消息尚未出现时提供「Resend message」。发送前再次检查历史，重发沿用原消息 ID。历史无法完整检查时，可继续检查并保留浏览器草稿。
