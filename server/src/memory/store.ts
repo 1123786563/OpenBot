@@ -600,27 +600,58 @@ export function createMemoryStore(
     },
     async remove(ownerUserId: string, id: string) {
       if (id.startsWith(INTELLIGENCE_ID_PREFIX)) {
-        if (!intelligence || !(await intelligence.available()))
-          throw new MemoryUnavailableError();
         const remoteId = id.slice(INTELLIGENCE_ID_PREFIX.length);
-        // Only a memory of this person's that no row describes is forgotten by this id. A linked one
-        // is forgotten through its row, so its provenance and tombstone go with it.
-        if ((await linkedIds(ownerUserId)).has(remoteId))
-          throw new MemoryNotFoundError();
-        if (!(await intelligence.remove(ownerUserId, remoteId)))
-          throw new MemoryUnavailableError();
-        /*
-         * A forget the person asked for, on the trail like any other, though no row describes it. The
-         * removal itself is the backend's, which no transaction here can share: the row is written
-         * once the removal has answered, never before it.
-         */
-        await database.insert(auditEvents).values({
-          eventType: "configuration.changed",
-          targetType: "personal_memory",
-          targetId: id,
-          actorUserId: ownerUserId,
-          payload: { change: "memory_deleted" },
-        });
+        const tombstoneId = `forgotten-intelligence:${digestOf(JSON.stringify([ownerUserId, remoteId]))}`;
+        const tombstone = async () => {
+          const [row] = await database
+            .select({ pendingId: personalMemories.intelligenceMemoryId })
+            .from(personalMemories)
+            .where(eq(personalMemories.id, tombstoneId));
+          return row;
+        };
+
+        if (!(await tombstone())) {
+          if (!intelligence || !(await intelligence.available()))
+            throw new MemoryUnavailableError();
+          const visible = await intelligence.list(ownerUserId);
+          if (!visible) throw new MemoryUnavailableError();
+          if (
+            !visible.some((memory) => memory.id === remoteId) ||
+            (await linkedIds(ownerUserId)).has(remoteId)
+          ) {
+            // A concurrent request may already have queued or completed this forget.
+            if (!(await tombstone())) throw new MemoryNotFoundError();
+          } else {
+            await database.transaction(async (transaction) => {
+              const [queued] = await transaction
+                .insert(personalMemories)
+                .values({
+                  id: tombstoneId,
+                  ownerUserId,
+                  content: "",
+                  provenance: INTELLIGENCE_PROVENANCE,
+                  enabled: false,
+                  deletedAt: new Date(),
+                  intelligenceMemoryId: remoteId,
+                })
+                .onConflictDoNothing()
+                .returning({ id: personalMemories.id });
+              if (!queued) return;
+              await transaction.insert(auditEvents).values({
+                eventType: "configuration.changed",
+                targetType: "personal_memory",
+                targetId: id,
+                actorUserId: ownerUserId,
+                payload: { change: "memory_deleted" },
+              });
+            });
+          }
+        }
+
+        // Never retire the remote copy before the local tombstone and Audit row commit.
+        // The existing mirror worker can resume retirement after a lost response or restart.
+        await mirror(ownerUserId, tombstoneId);
+        if ((await tombstone())?.pendingId) throw new MemoryUnavailableError();
         return;
       }
       // Imported tombstones prevent the next sync from resurrecting a fact the person deleted.
