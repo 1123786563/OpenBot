@@ -102,7 +102,7 @@ export function LearningReview() {
   const sectionHeading = useRef<HTMLHeadingElement>(null);
   if (review.isPending || review.error) {
     return (
-      <PageSection headingRef={sectionHeading} title="New skills">
+      <PageSection title="New skills">
         {review.error ? (
           <ReadError
             focusAfterRetry={() => sectionHeading.current}
