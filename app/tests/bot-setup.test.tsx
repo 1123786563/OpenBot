@@ -420,6 +420,43 @@ test("other edits leave Isolated alone", async () => {
   expect(updates[0]).not.toHaveProperty("isolated");
 });
 
+test("Setup checks isolation, then lets the owner retry a temporary capability failure", async () => {
+  serve(MANAGED);
+  const fixtureFetch = globalThis.fetch;
+  const initialCheck = Promise.withResolvers<Response>();
+  let checks = 0;
+  globalThis.fetch = Object.assign(
+    (path: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      if (path === "/api/agents/capabilities" && ++checks === 1) {
+        return initialCheck.promise;
+      }
+      return fixtureFetch(path, init);
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const view = draw();
+  await view.findByText("Checking whether isolation is available…");
+  expect((await isolatedSwitch(view)).hasAttribute("data-disabled")).toBe(true);
+
+  initialCheck.resolve(
+    Response.json({ error: "Temporarily unavailable" }, { status: 503 }),
+  );
+  await view.findByText("Couldn’t check whether isolation is available");
+  expect((await isolatedSwitch(view)).hasAttribute("data-disabled")).toBe(true);
+
+  const user = userEvent.setup({ document: view.baseElement.ownerDocument });
+  await user.click(view.getByRole("button", { name: "Retry" }));
+  await waitFor(async () => {
+    expect((await isolatedSwitch(view)).hasAttribute("data-disabled")).toBe(
+      false,
+    );
+  });
+  expect(
+    view.queryByText("Couldn’t check whether isolation is available"),
+  ).toBeNull();
+  expect(checks).toBe(2);
+});
+
 test("a deployment that cannot make a second computer shows the row disabled, and says why", async () => {
   serve(MANAGED, actor.id, { isolationAvailable: false });
   const view = draw();
