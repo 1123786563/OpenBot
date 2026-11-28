@@ -15,9 +15,19 @@ export function managePaths(edition: "team" | "personal") {
     return {
       /** What the list of apps is called where a back button names it. */
       pluginsLabel: "Connections",
-      plugins: () => linkOptions({ to: "/connections" }),
-      plugin: (key: string) =>
-        linkOptions({ to: "/connections/$key", params: { key } }),
+      plugins: (q?: string, returnPlugin?: string) =>
+        linkOptions({
+          to: "/connections",
+          search: { q },
+          state: { returnPlugin },
+          resetScroll: !returnPlugin,
+        }),
+      plugin: (key: string, q?: string) =>
+        linkOptions({
+          to: "/connections/$key",
+          params: { key },
+          search: { q },
+        }),
       /*
        * The app's own page for both: every Bot has every tool of a connected app here, so there is
        * no page for one tool or one Bot. See `personal-defaults.ts` on the server.

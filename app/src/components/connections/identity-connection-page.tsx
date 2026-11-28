@@ -45,10 +45,12 @@ import {
  */
 export function IdentityConnectionPage({
   linked,
+  listQuery,
   outcome,
   provider,
 }: {
   linked: string | undefined;
+  listQuery?: string;
   outcome?: string;
   provider: LinkableProvider;
 }) {
@@ -72,7 +74,15 @@ export function IdentityConnectionPage({
 
   return (
     <ConnectionPage
-      backButton={{ label: "Connections", linkProps: { to: "/connections" } }}
+      backButton={{
+        label: "Connections",
+        linkProps: {
+          to: "/connections",
+          search: { q: listQuery },
+          state: { returnPlugin: provider },
+          resetScroll: false,
+        },
+      }}
       description={IDENTITY_SUMMARIES[provider]}
       title={title}
     >
