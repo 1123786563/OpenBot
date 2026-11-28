@@ -53,20 +53,30 @@ Web 构建提交为 `ccca02100ed6f9eb68321eb03541053553c04449`，入口 HTML 的
 - Astryx 构建检测 4 项通过，0 警告，0 失败。#194 定向回归通过。集成全套记录在 wave-2 基线 `6a0756d3f`，尾分片仍有 6 项失败。#194 的独立 fixture 范围内以定向结果为准。
 - Playground 首轮在部分单元捕获到沙箱 iframe 的存储或 Service Worker 异常。复测将主题初始化限制在顶层文档，本地存储异常消失，四个单元仍有 Service Worker 异常。成功发布与真实组件加载仍需适用环境。
 
-构建 `ccca02100` 的 #183 Chromium 复验记录了 28 个共享布局与恢复页样本。工作区、Admin 和 Settings 在 390×844 的浅色与深色下都能用 Escape 关闭抽屉，焦点返回原按钮，共六组。页面异常和文档级横向溢出均为 0。49 项导航定向测试在 15 秒超时下全部通过。首次与浏览器走查并行执行时，有三项达到默认 5 秒超时。原始矩阵见 `~/.local/state/openbot-spec-127/evidence/current-acceptance.z62MJZ/shells-pilot/run.json`。真实读屏和真实依赖故障恢复仍待验。
+构建 `ccca02100` 的 #183 Chromium 复验记录了 28 个共享布局与恢复页样本。工作区、Admin 和 Settings 在 390×844 的浅色与深色下都能用 Escape 关闭抽屉，焦点返回原按钮，共六组。页面异常和文档级横向溢出均为 0。49 项导航定向测试在 15 秒超时下全部通过。首次与浏览器走查并行执行时，有三项达到默认 5 秒超时。原始矩阵见 `~/.local/state/openbot-spec-127/evidence/current-acceptance.z62MJZ/shells-pilot/run.json`。真实读屏仍待验。Settings 路由依赖恢复另见下文。
 
 ## 待验项目
 
 | 项目 | 当前限制 | 所需环境 |
 |---|---|---|
-| 三类真实角色、权限降低、登录回跳、已有书签进入原任务 | 浏览器身份、能力和回调均由模拟端点提供 | #182 部署、三个角色的真实账户和实际 SSO/OAuth 提供者 |
+| 三类真实角色、权限降低、登录回跳、已有书签进入原任务 | 已在隔离 OpenBot、PostgreSQL 和 Keycloak 验证 Team 登录回跳和同会话降权，并验证 Team 两种角色及 Personal 的例行任务写入。其余任务仍以模拟身份为主 | 用三个角色逐条执行剩余任务，并验证适用的外部 OAuth 提供者 |
 | 每个视图的适用默认、首载、空、失败、禁止、不可用及写入成功、取消、重试 | 本轮只采集首屏与一次 Tab。部分 API 缺失或模拟 ID 没有对应数据 | 为受影响路由补齐可控服务、失败注入、并发写入与有效记录，再逐页走查 |
-| 回退目标与恢复操作 | 路由结果或错误画面已捕获。全量站内返回、恢复后回焦和依赖恢复未验 | 稳定的浏览器 fixture 加返回历史、离线及可恢复的依赖中断 |
+| 回退目标与恢复操作 | Chromium 和 WebKit 已验证 Settings 路由依赖连续返回 HTTP 503 后恢复，保留原 URL 并将焦点移到标题。其余视图的返回和恢复仍待验 | 具有返回历史、离线和可控依赖中断的逐页流程 |
 | Bot 流式回复、审批、A2UI 和发送幂等 | 会话仅有首屏或模拟反馈，#182 的组件证据仍有效 | 真实 Intelligence 网关、模型和可追踪执行记录 |
 | 第三方连接、授权取消、真实预约和桌面交还 | 回环 fixture 拦截外部请求和协议调用 | Google、Microsoft、SSO、Composio、Calendly 与已安装的桌面应用 |
 | 全量告警和 ReadError 对比度、非 Chromium 及主题变体 | 只采集 Chromium 和少量实色样本 | 可控错误状态、品牌配色、WebKit 与 Firefox |
 | 读屏与实体触屏 | 可访问性树、单次 Tab 与抽屉键盘流程 | VoiceOver 与 Safari、NVDA 与 Firefox、实体手机与可用设备权限 |
 | 两名评审独立复评分和完整生产回归 | 有限的设计观察与定向测试 | 完整任务 fixture、第二名独立评审和本构建 CI 五分片 |
+
+### 补充流程证据
+
+- Chromium 和 WebKit 在主线构建 `87bb5713a` 中验证相同的路由依赖故障。初次失败后无支持码，重试仍失败时显示 `WEB-ROUTE-ASSET`，服务恢复后保留原 URL 并聚焦 Notifications 标题。 [双浏览器记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/route-support-current.VJox3Z/evidence/run.json)
+- 例行任务在独立 OpenBot API 和 PostgreSQL 中验证了三个角色的实际写入。Personal 管理员和两种 Team 角色分别收到一次 201，焦点回到列表标题，刷新后读回任务。Team 两条记录的所有者不同。 [Personal 记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/routine-browser-db.Ik2oB2/run.json) · [Team 记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/routine-team-browser.fydU7n/run.json)
+- 治理页面在桌面、390 和 320 CSS 像素各复跑浅色和深色，使用模拟 API 验证边界读取重试、并发保存和 People 的键盘确认。另有 95 项 Web 与 PostgreSQL 测试通过。 [治理矩阵](/Users/wuyj/.local/state/openbot-spec-127/evidence/governance-320.q9hGHS/run.json)
+
+- #187 在源码 `a0949919f` 上使用 Chromium headless shell 通过 9 项设备和凭据页面测试。测试覆盖两种部署版本及浅深外观、503 原位重试、403、操作触区和键盘流程。完整 Chromium 进程在本机提前退出，同一套测试改用 headless shell 后全部通过。另有 20 项本地 Computer 服务测试通过，覆盖浏览器进程替换后恢复登录、Recorder 和接管交还。两个 Google 外网场景跳过。原生桌面窗口、实体触屏及读屏仍待验。 [页面日志](/Users/wuyj/.local/state/openbot-spec-127/evidence/device-browser-regression.SUrH9v/device-pages.log) · [Computer 日志](/Users/wuyj/.local/state/openbot-spec-127/evidence/device-browser-regression.SUrH9v/computer-service.log)
+
+- #185 在 Web 构建 `87bb5713a` 的 390×844 Chromium 中使用本地 Keycloak 登录 Team 管理员和成员。独立 OpenBot API 创建双 Bot 群聊，成员加入前读取为 404。管理员在浏览器添加成员后，成员可读取群聊并看到两位 Bot 和两位成员。成员移除创建者被拒绝。管理员确认移除成员后，成员请求恢复为 404，重新打开只显示恢复入口。 [群聊权限记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/group-team-members.8gMLMu/run.json) · [构建清单](/Users/wuyj/.local/state/openbot-spec-127/evidence/group-team-members.8gMLMu/manifest.json)
 
 ## 逐页记录
 
