@@ -3,6 +3,7 @@ import { ConnectionPage } from "@/components/connections/connection-surface";
 import { CheckInsSection } from "@/components/settings/check-ins";
 import { NativeDevices, RecentDeliveries } from "@/components/settings/devices";
 import { UpdateRoutingSection } from "@/components/settings/update-routing";
+import { useTranslation } from "@/i18n";
 
 export const Route = createFileRoute("/_authed/settings/notifications")({
   component: NotificationsPage,
@@ -13,10 +14,14 @@ export const Route = createFileRoute("/_authed/settings/notifications")({
  * Each Bot's own page says how much.
  */
 function NotificationsPage() {
+  const { t } = useTranslation();
   return (
     <ConnectionPage
-      description="Choose where you receive updates when you’re away. Set each Bot’s update frequency on its page."
-      title="Notifications"
+      description={t(
+        "settings.notifications.description",
+        "Choose where you receive updates when you’re away. Set each Bot’s update frequency on its page.",
+      )}
+      title={t("settings.sidebar.notifications", "Notifications")}
     >
       <CheckInsSection />
       <UpdateRoutingSection />

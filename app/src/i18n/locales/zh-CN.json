@@ -233,6 +233,7 @@
   "settings.name.saveFailed": "无法保存你的名字",
   "settings.name.saved": "你的名字已保存。",
   "settings.name.saving": "正在保存…",
+  "settings.notifications.description": "选择离开时接收更新的渠道。每个 Bot 的更新频率可在其页面上设置。",
   "settings.privacy.changeFailed": "无法更改此设置。请重试。",
   "settings.privacy.explanation": "OpenBot 会发送使用数据，并关联到你的 OpenBot 账号。它绝不会发送你的对话、文件或密钥。更改将在下次 OpenBot 启动时生效。",
   "settings.privacy.offByEnvironment": "在这台电脑上已关闭。OpenBot 不发送使用数据。",
