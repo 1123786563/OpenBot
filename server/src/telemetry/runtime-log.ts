@@ -219,22 +219,22 @@ const events = {
     error_category: "bifrost_evidence_recovery_error",
     diagnostic: "The worker could not recover Bifrost billing evidence.",
   },
-  lago_usage_export_failed: {
+  usage_export_failed: {
     severity: "warn",
     component: "worker",
     operation: "sweep",
     outcome: "failed",
-    error_category: "lago_usage_export_error",
+    error_category: "usage_export_error",
     diagnostic:
-      "Lago usage export could not proceed. Pending events remain durable.",
+      "Billing usage export could not proceed. Pending events remain durable.",
   },
-  lago_usage_export_paused: {
+  usage_export_paused: {
     severity: "warn",
     component: "worker",
     operation: "sweep",
     outcome: "failed",
-    error_category: "lago_usage_discrepancy",
-    diagnostic: "Lago usage export paused a discrepant event for review.",
+    error_category: "usage_discrepancy",
+    diagnostic: "Billing usage export paused a discrepant event for review.",
   },
   routine_sweep_failed: {
     severity: "warn",

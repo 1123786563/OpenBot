@@ -630,3 +630,26 @@ export const pilotProviderCostHolds = pgTable(
     ),
   ],
 );
+
+// Independent delivery state preserves Lago history when a deployment switches exporters.
+export const flexpriceUsageDeliveries = pgTable(
+  "flexprice_usage_deliveries",
+  {
+    eventId: text("event_id")
+      .primaryKey()
+      .references(() => lagoUsageEvents.eventId),
+    state: text({ enum: ["pending", "accepted", "paused"] })
+      .notNull()
+      .default("pending"),
+    failure: text(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    check(
+      "flexprice_usage_deliveries_state",
+      sql`${table.state} IN ('pending', 'accepted', 'paused')`,
+    ),
+  ],
+);

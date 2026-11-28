@@ -16,7 +16,7 @@ services:
       driver: json-file
       options: {max-size: 10m, max-file: "3"}
   migrate:
-    image: openbot-server:persaas-casdoor-20261128
+    image: openbot-worker:persaas-flexprice-20261128
     profiles: [tools]
     entrypoint: [bun, /app/infisical-runtime.mjs]
     command: [bun, --no-env-file, scripts/migrate.ts]
@@ -44,7 +44,7 @@ services:
       driver: json-file
       options: {max-size: 10m, max-file: "3"}
   worker:
-    image: openbot-server:persaas-casdoor-20261128
+    image: openbot-worker:persaas-flexprice-20261128
     restart: unless-stopped
     mem_limit: 512m
     command: [bun, --no-env-file, ../worker/src/index.ts]
