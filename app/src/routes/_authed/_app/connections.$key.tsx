@@ -123,11 +123,13 @@ export const Route = createFileRoute("/_authed/_app/connections/$key")({
     search: Record<string, unknown>,
   ): {
     linked?: string;
+    q?: string;
     action?: string;
     connect?: true;
     corsair?: string;
   } => ({
     ...searchTextEntry("linked", search.linked),
+    ...searchTextEntry("q", search.q),
     ...searchTextEntry("action", search.action),
     ...searchTextEntry("corsair", search.corsair),
     /*
@@ -146,7 +148,7 @@ export const Route = createFileRoute("/_authed/_app/connections/$key")({
  */
 function RouteComponent() {
   const { key } = Route.useParams();
-  const { linked, action, connect, corsair } = Route.useSearch();
+  const { linked, action, connect, corsair, q } = Route.useSearch();
   const personal =
     useQuery(deploymentCapabilitiesQueryOptions()).data?.edition === "personal";
   // Held for this visit, keyed on the app, and dropped from the address below.
@@ -168,6 +170,7 @@ function RouteComponent() {
     return (
       <IdentityConnectionPage
         linked={linked}
+        listQuery={q}
         outcome={arrival.key === key ? arrival.corsair : undefined}
         provider={key}
       />
@@ -181,7 +184,14 @@ function RouteComponent() {
    * authorization (`?action=`) keeps its own page, which is what that flow comes back to.
    */
   if (personal && action === undefined)
-    return <PluginPage key={key} pluginKey={key} startConnect={startConnect} />;
+    return (
+      <PluginPage
+        key={key}
+        pluginKey={key}
+        startConnect={startConnect}
+        listQuery={q}
+      />
+    );
   return <AppConnectionPage startConnect={startConnect} />;
 }
 
@@ -189,7 +199,7 @@ function AppConnectionPage({ startConnect }: { startConnect: boolean }) {
   const { key } = useParams({
     from: "/_authed/_app/connections/$key",
   });
-  const { action } = Route.useSearch();
+  const { action, q } = Route.useSearch();
   const paths = useManagePaths();
   /*
    * `?action=` IS READ ONCE HERE AND DROPPED FROM THE URL BELOW, BUT IT FEEDS TWO THINGS.
@@ -376,7 +386,12 @@ function AppConnectionPage({ startConnect }: { startConnect: boolean }) {
 
   const back = {
     label: "Connections",
-    linkProps: { to: "/connections" as const },
+    linkProps: {
+      to: "/connections" as const,
+      search: { q },
+      state: { returnPlugin: key },
+      resetScroll: false,
+    },
   };
 
   /*

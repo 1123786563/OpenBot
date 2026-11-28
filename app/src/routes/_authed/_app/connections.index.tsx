@@ -13,7 +13,7 @@ import {
   IconSearch,
 } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useLocation } from "@tanstack/react-router";
 import * as React from "react";
 import { AddCustomMcp } from "@/components/connections/add-custom-mcp";
 import {
@@ -115,8 +115,14 @@ export const Route = createFileRoute("/_authed/_app/connections/")({
    */
   validateSearch: (
     search: Record<string, unknown>,
-  ): { connected?: string; authorized?: string; linked?: string } => ({
+  ): {
+    connected?: string;
+    authorized?: string;
+    linked?: string;
+    q?: string;
+  } => ({
     ...searchTextEntry("connected", search.connected),
+    ...searchTextEntry("q", search.q),
     /*
      * A CHANNEL OF ITS OWN, BESIDE `?connected=` AND NEVER FOLDED INTO IT. That one is the Composio
      * OAuth callback's and carries a server key or `failed`; this one is the brokered per-action
@@ -262,9 +268,16 @@ const markFor = (key: string) => keyedLookup(MARKS, key);
 /** Placeholder tiles while the apps read is open: enough to hold the grid's shape, claiming nothing. */
 const LOADING_ROWS = ["a", "b", "c", "d"];
 
+let lastOpenedConnection: { entry: string; key: string } | undefined;
+
 function RouteComponent() {
   const { data: user } = useQuery(currentUserQueryOptions());
-  const { connected: outcome, authorized, linked } = Route.useSearch();
+  const {
+    connected: outcome,
+    authorized,
+    linked,
+    q: search = "",
+  } = Route.useSearch();
   /*
    * ALL THREE READ ONCE HERE, AND ALL THREE DROPPED FROM THE URL BELOW — not just `?linked=`.
    *
@@ -314,7 +327,33 @@ function RouteComponent() {
       replace: true,
     });
   }, [outcome, authorized, linked, navigate]);
-  const [search, setSearch] = React.useState("");
+  const setSearch = (q: string) =>
+    void navigate({
+      search: (previous) => ({ ...previous, q: q.slice(0, 200) || undefined }),
+      replace: true,
+      resetScroll: false,
+    });
+  const returnPlugin = useLocation({
+    select: (location) => location.state.returnPlugin,
+  });
+  const entry = useLocation({ select: (location) => location.state.__TSR_key });
+  const connectionRowElements = React.useRef(new Map<string, HTMLElement>());
+  const restoredEntry = React.useRef<string>(undefined);
+  React.useLayoutEffect(() => {
+    if (!entry || restoredEntry.current === entry) return;
+    const key =
+      returnPlugin ??
+      (lastOpenedConnection?.entry === entry
+        ? lastOpenedConnection.key
+        : undefined);
+    if (!key) return;
+    const row = connectionRowElements.current.get(key);
+    if (!row) return;
+    restoredEntry.current = entry;
+    lastOpenedConnection = undefined;
+    const active = document.activeElement;
+    if (active === document.body || active?.matches("main")) row.focus();
+  });
   const plugins = useQuery(pluginsPageQueryOptions());
   const connections = useQuery(connectionsQueryOptions());
   const github = useQuery(corsairAccountsQueryOptions("github"));
@@ -591,6 +630,23 @@ function RouteComponent() {
                               )
                           : undefined
                       }
+                      listQuery={search || undefined}
+                      onOpen={(event) => {
+                        if (
+                          entry &&
+                          event.button === 0 &&
+                          !event.altKey &&
+                          !event.ctrlKey &&
+                          !event.metaKey &&
+                          !event.shiftKey
+                        )
+                          lastOpenedConnection = { entry, key: row.key };
+                      }}
+                      rowRef={(node) => {
+                        if (node)
+                          connectionRowElements.current.set(row.key, node);
+                        else connectionRowElements.current.delete(row.key);
+                      }}
                       pending={connectApp.pending === row.key}
                       row={row}
                     />
@@ -887,10 +943,16 @@ function AppDirectorySection() {
 function ConnectionItem({
   row,
   onPress,
+  listQuery,
+  onOpen,
+  rowRef,
   pending = false,
 }: {
   row: ConnectionRow;
   onPress?: () => void;
+  listQuery?: string;
+  onOpen: React.MouseEventHandler<HTMLAnchorElement>;
+  rowRef: React.RefCallback<HTMLAnchorElement>;
   pending?: boolean;
 }) {
   return (
@@ -901,7 +963,13 @@ function ConnectionItem({
         onPress ? (
           <button disabled={pending} onClick={onPress} type="button" />
         ) : (
-          <Link params={{ key: row.key }} to="/connections/$key" />
+          <Link
+            onClick={onOpen}
+            params={{ key: row.key }}
+            ref={rowRef}
+            search={{ q: listQuery }}
+            to="/connections/$key"
+          />
         )
       }
       size="sm"
