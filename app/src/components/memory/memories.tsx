@@ -90,8 +90,11 @@ export function RememberFact({
   const [content, setContent] = useState("");
   const formId = useId();
   const opener = useRef<HTMLButtonElement>(null);
+  const receipt = useRef<HTMLParagraphElement>(null);
   const submitting = useRef(false);
   const remember = useMutation(createMemoryMutationOptions(queryClient));
+  const savedMessage =
+    canWrite && remember.isSuccess ? "Memory saved." : undefined;
   return (
     <>
       {canWrite ? (
@@ -113,13 +116,16 @@ export function RememberFact({
         </Button>
       ) : null}
       <Text
+        aria-label={savedMessage}
         as="p"
-        className={canWrite && remember.isSuccess ? undefined : "sr-only"}
+        className={savedMessage ? undefined : "sr-only"}
         color="secondary"
+        ref={receipt}
         role="status"
         size="sm"
+        tabIndex={-1}
       >
-        {canWrite && remember.isSuccess ? "Memory saved." : null}
+        {savedMessage}
       </Text>
       <SettingsDraftDialog
         action={
@@ -138,7 +144,11 @@ export function RememberFact({
         guardNavigation={submitting}
         onClose={() => setOpen(false)}
         open={open}
-        opener={() => opener.current ?? fallbackFocus?.() ?? null}
+        opener={() =>
+          (savedMessage ? receipt.current : opener.current) ??
+          fallbackFocus?.() ??
+          null
+        }
         saving={remember.isPending}
         title="Remember a fact"
       >
