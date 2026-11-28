@@ -292,8 +292,10 @@ async function capture(browser, cases, role, width, theme) {
           animations: "disabled",
         });
         record.capture = `captures/${id}.png`;
-        if (mode === "shells") {
+        if (mode === "full" || mode === "shells") {
           record.contrast = await page.evaluate(sampleContrast);
+        }
+        if (mode === "shells") {
           if (
             width === 390 &&
             ["/", "/admin/people", "/settings/"].includes(entry.path)
